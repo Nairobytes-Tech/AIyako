@@ -58,7 +58,8 @@ export async function runAgent(userInput) {
             const final = await result.final;
 
             if (toolCalls.length > 0) {
-                history.push({ role: 'assistant', content: final.contentText || assistantContent });
+                const content = (final.contentText || assistantContent).trim();
+                history.push({ role: 'assistant', content: content || '[tool_calls]' });
 
                 for (const call of toolCalls) {
                     console.log(`\n▸ Executing: ${call.name}`);
@@ -76,7 +77,9 @@ export async function runAgent(userInput) {
                     });
                 }
             } else {
-                history.push({ role: 'assistant', content: final.contentText || assistantContent });
+                const content = (final.contentText || assistantContent).trim();
+                console.log(`\n▸ ${content || assistantContent.trim()}`);
+                history.push({ role: 'assistant', content: content });
                 break;
             }
         }

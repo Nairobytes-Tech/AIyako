@@ -3,7 +3,7 @@ import { getDb } from '../db/database.js';
 
 export const createTaskSchema = z.object({
     title: z.string().min(1, 'Task title is required'),
-    due_date: z.string().min(1, 'Due date is required').optional(),
+    due_date: z.string().min(1, 'Due date cannot be empty').optional(),
 });
 
 function parseDueDate(dateStr) {
