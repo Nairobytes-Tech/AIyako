@@ -9,7 +9,9 @@ export const searchNotesSchema = z.object({
 export async function searchNotes(input) {
     const parsed = searchNotesSchema.safeParse(input);
     if (!parsed.success) {
-        return { success: false, error: parsed.error.errors[0].message };
+        const errors = parsed.error.issues || parsed.error.errors || [];
+        const msg = errors.length > 0 ? errors[0].message : 'Validation failed';
+        return { success: false, error: msg };
     }
 
     const db = getDb();

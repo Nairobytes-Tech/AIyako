@@ -8,7 +8,9 @@ export const saveNoteSchema = z.object({
 export async function saveNote(input) {
     const parsed = saveNoteSchema.safeParse(input);
     if (!parsed.success) {
-        return { success: false, error: parsed.error.errors[0].message };
+        const errors = parsed.error.issues || parsed.error.errors || [];
+        const msg = errors.length > 0 ? errors[0].message : 'Validation failed';
+        return { success: false, error: msg };
     }
 
     const db = getDb();

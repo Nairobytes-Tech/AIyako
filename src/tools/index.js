@@ -1,7 +1,8 @@
 import { saveNote, saveNoteSchema } from './saveNote.js';
 import { searchNotes, searchNotesSchema } from './searchNotes.js';
 import { createTask, createTaskSchema } from './createTask.js';
-import { z } from 'zod';
+import { listTasks, listTasksSchema } from './listTasks.js';
+import { markTaskDone, markTaskDoneSchema } from './markTaskDone.js';
 
 export const toolDefinitions = [
     {
@@ -19,6 +20,16 @@ export const toolDefinitions = [
         description: 'Create a task with a title and optional due date. Use this when the user wants to track something they need to do.',
         parameters: createTaskSchema,
     },
+    {
+        name: 'list_tasks',
+        description: 'List all tasks, optionally filtered by completion status. Use this to see what tasks exist.',
+        parameters: listTasksSchema,
+    },
+    {
+        name: 'mark_task_done',
+        description: 'Mark a task as completed by its ID. Use this when the user has finished a task.',
+        parameters: markTaskDoneSchema,
+    },
 ];
 
 export const executeTool = async (name, args) => {
@@ -29,9 +40,13 @@ export const executeTool = async (name, args) => {
             return await searchNotes(args);
         case 'create_task':
             return await createTask(args);
+        case 'list_tasks':
+            return await listTasks(args);
+        case 'mark_task_done':
+            return await markTaskDone(args);
         default:
             return { success: false, error: `Unknown tool: ${name}` };
     }
 };
 
-export { saveNote, searchNotes, createTask };
+export { saveNote, searchNotes, createTask, listTasks, markTaskDone };

@@ -1,15 +1,20 @@
 {
   "name": "kioo-ai",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "description": "A local offline AI assistant using QVAC SDK for local LLM inference",
   "type": "module",
+  "main": "src/agent.js",
+  "scripts": {
+    "start": "QVAC_CONFIG_PATH=./qvac.config.json node src/agent.js",
+    "dev": "QVAC_CONFIG_PATH=./qvac.config.json node src/agent.js",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "test:runner": "node --test",
+    "lint": "node --check src/**/*.js",
+    "lint:test": "node --check tests/**/*.js"
+  },
+  "keywords": ["ai", "offline", "llm", "qvac", "sqlite"],
+  "author": "",
+  "license": "Apache-2.0",
   "dependencies": {
     "@qvac/sdk": "^0.22.0",
     "zod": "^4.6.5"
