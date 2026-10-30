@@ -10,32 +10,66 @@
     <div class="app-container">
         <header class="header">
             <h1>Kioo AI</h1>
-            <span class="offline-badge">Local Only</span>
+            <div class="status-bar">
+                <span class="status-indicator">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span class="status-text" id="statusText">Offline</span>
+                </span>
+                <span class="network-status" id="connectionStatus">Network: Offline</span>
+            </div>
         </header>
 
-        <div class="sidebar">
-            <div class="sidebar-section">
-                <h2>Tasks</h2>
-                <button id="refreshTasks" class="btn-small">Refresh</button>
-                <ul id="taskList" class="item-list"></ul>
-            </div>
-            <div class="sidebar-section">
-                <h2>Notes</h2>
-                <button id="refreshNotes" class="btn-small">Refresh</button>
-                <ul id="noteList" class="item-list"></ul>
-            </div>
-        </div>
+        <nav class="bottom-nav">
+            <button class="nav-tab active" data-tab="chat">
+                <span class="nav-icon">💬</span>
+                <span class="nav-label">Chat</span>
+            </button>
+            <button class="nav-tab" data-tab="tasks">
+                <span class="nav-icon">✓</span>
+                <span class="nav-label">Tasks</span>
+            </button>
+            <button class="nav-tab" data-tab="notes">
+                <span class="nav-icon">📎</span>
+                <span class="nav-label">Notes</span>
+            </button>
+            <button class="nav-tab" data-tab="library">
+                <span class="nav-icon">📚</span>
+                <span class="nav-label">Library</span>
+            </button>
+        </nav>
 
         <main class="main-content">
-            <div id="status" class="status-bar">
-                <span id="modelStatus">Model: Loading...</span>
-                <span id="connectionStatus">Network: Offline</span>
-            </div>
-            <div id="chatContainer" class="chat-container"></div>
-            <form id="chatForm" class="chat-form">
-                <textarea id="messageInput" placeholder="Ask Kioo..." rows="1" required></textarea>
-                <button type="submit" id="sendBtn">Send</button>
-            </form>
+            <section class="chat-view active" id="chatView">
+                <div id="chatContainer" class="chat-container"></div>
+                <form id="chatForm" class="chat-form">
+                    <textarea id="messageInput" placeholder="Message Kioo..." rows="1" required></textarea>
+                    <button type="submit" id="sendBtn" disabled>Send</button>
+                </form>
+            </section>
+
+            <section class="tasks-view" id="tasksView">
+                <div class="view-header">
+                    <h2>Tasks</h2>
+                    <button id="addTaskBtn" class="btn-small">+ New Task</button>
+                </div>
+                <div id="taskList" class="item-list-container"></div>
+            </section>
+
+            <section class="notes-view" id="notesView">
+                <div class="view-header">
+                    <h2>Notes</h2>
+                </div>
+                <div id="noteList" class="item-list-container"></div>
+            </section>
+
+            <section class="library-view" id="libraryView">
+                <div class="view-header">
+                    <h2>Library</h2>
+                </div>
+                <div class="library-placeholder">
+                    <p>Artifacts and dashboards created by Kioo will appear here.</p>
+                </div>
+            </section>
         </main>
     </div>
     <script src="app.js" type="module"></script>

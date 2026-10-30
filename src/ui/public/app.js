@@ -3,135 +3,91 @@ const API_BASE = '';
 let isOnline = navigator.onLine;
 let isProcessing = false;
 
-const statusBar = document.getElementById('status');
-const modelStatus = document.getElementById('modelStatus');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
 const connectionStatus = document.getElementById('connectionStatus');
+const modelStatus = document.getElementById('modelStatus');
 const chatContainer = document.getElementById('chatContainer');
 const chatForm = document.getElementById('chatForm');
 const messageInput = document.getElementById('messageInput');
 const sendBtn = document.getElementById('sendBtn');
-const taskList = document.getElementById('taskList');
-const noteList = document.getElementById('noteList');
-const refreshTasksBtn = document.getElementById('refreshTasks');
-const refreshNotesBtn = document.getElementById('refreshNotes');
+const taskListEl = document.getElementById('taskList');
+const noteListEl = document.getElementById('noteList');
+const navTabs = document.querySelectorAll('.nav-tab');
+const views = document.querySelectorAll('.chat-view, .tasks-view, .notes-view, .library-view');
 
-updateConnectionStatus();
+initApp();
 
-window.addEventListener('online', () => {
-    isOnline = true;
-    updateConnectionStatus();
-});
+function initApp() {
+    connectionStatus.textContent = `Network: ${isOnline ? 'Online' : 'Offline'}`;
+    sendBtn.disabled = true;
+    checkHealth();
+    initNav();
+    initChat();
 
-window.addEventListener('offline', () => {
-    isOnline = false;
-    updateConnectionStatus();
-});
+    messageInput.addEventListener('input', () => {
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+    });
 
-function updateConnectionStatus() {
-    connectionStatus.textContent = `Network: ${isOnline ? 'Online (local mode)' : 'Offline'}`;
-    connectionStatus.style.color = isOnline ? '#e94560' : '#e94560';
+    messageInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (!isProcessing && messageInput.value.trim()) {
+                chatForm.dispatchEvent(new Event('submit'));
+            }
+        }
+    });
+
+    const addTaskBtn = document.getElementById('addTaskBtn');
+    if (addTaskBtn) {
+        addTaskBtn.addEventListener('click', () => {
+            addAssistantMessage('I can help you create tasks! Just tell me what you need to do in the chat.');
+        });
+    }
+
+    messageInput.addEventListener('input', () => {
+        sendBtn.disabled = !messageInput.value.trim();
+    });
+}
+
+function initNav() {
+    navTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            navTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            views.forEach(v => v.classList.remove('active'));
+            document.getElementById(`${tab.dataset.tab}View`).classList.add('active');
+            if (tab.dataset.tab === 'tasks') fetchTasks();
+            if (tab.dataset.tab === 'notes') fetchNotes();
+        });
+    });
+}
+
+function initChat() {
+    chatForm.addEventListener('submit', handleChatSubmit);
 }
 
 async function checkHealth() {
     try {
         const res = await fetch(`${API_BASE}/health`);
-        if (res.ok) {
-            const data = await res.json();
-            modelStatus.textContent = `Model: Loaded (offline: ${data.offline})`;
+        const data = await res.json();
+        modelStatus.textContent = `Model: ${data.modelLoaded ? 'Loaded' : 'Not loaded'}`;
+        if (data.modelLoaded) {
+            statusDot.className = 'status-dot';
+            statusText.textContent = 'Ready';
+        } else {
+            statusDot.className = 'status-dot offline';
+            statusText.textContent = 'Offline';
         }
     } catch (err) {
         modelStatus.textContent = 'Model: Unavailable';
+        statusDot.className = 'status-dot offline';
+        statusText.textContent = 'Offline';
     }
 }
 
-async function fetchTasks() {
-    try {
-        const res = await fetch(`${API_BASE}/tasks`);
-        const data = await res.json();
-        renderTasks(data.tasks);
-    } catch (err) {
-        taskList.innerHTML = '<li class="error">Failed to load tasks</li>';
-    }
-}
-
-async function fetchNotes() {
-    try {
-        const res = await fetch(`${API_BASE}/notes`);
-        const data = await res.json();
-        renderNotes(data.notes);
-    } catch (err) {
-        noteList.innerHTML = '<li class="error">Failed to load notes</li>';
-    }
-}
-
-function renderTasks(tasks) {
-    if (!tasks.length) {
-        taskList.innerHTML = '<div class="empty-state">No tasks yet</div>';
-        return;
-    }
-    taskList.innerHTML = tasks.map(t => `
-        <li class="${t.completed ? 'completed' : ''}">
-            ${t.title}
-            <div class="meta">ID: ${t.id}${t.due_date ? ` • Due: ${t.due_date}` : ''}</div>
-        </li>
-    `).join('');
-}
-
-function renderNotes(notes) {
-    if (!notes.length) {
-        noteList.innerHTML = '<div class="empty-state">No notes yet</div>';
-        return;
-    }
-    noteList.innerHTML = notes.map(n => `
-        <li>${n.content}
-            <div class="meta">${n.created_at}</div>
-        </li>
-    `).join('');
-}
-
-function addMessage(content, role) {
-    const div = document.createElement('div');
-    div.className = `message ${role}`;
-    div.textContent = content;
-    chatContainer.appendChild(div);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-    return div;
-}
-
-function addToolCall(name, args) {
-    const div = document.createElement('div');
-    div.className = 'message assistant tool';
-    div.innerHTML = `<div class="tool-call">${name}(${JSON.stringify(args)})</div>`;
-    chatContainer.appendChild(div);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-    return div;
-}
-
-function addToolResult(result) {
-    const div = document.createElement('div');
-    div.className = 'message assistant';
-    const color = result.success ? '#a0cfa0' : '#e94560';
-    div.innerHTML = `<div class="tool-result" style="color:${color}">${JSON.stringify(result)}</div>`;
-    chatContainer.appendChild(div);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-}
-
-function showTypingIndicator() {
-    const div = document.createElement('div');
-    div.className = 'message assistant';
-    div.id = 'typing';
-    div.textContent = '...';
-    chatContainer.appendChild(div);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-    return div;
-}
-
-function removeTypingIndicator() {
-    const typing = document.getElementById('typing');
-    if (typing) typing.remove();
-}
-
-chatForm.addEventListener('submit', async (e) => {
+async function handleChatSubmit(e) {
     e.preventDefault();
     if (isProcessing) return;
 
@@ -143,11 +99,14 @@ chatForm.addEventListener('submit', async (e) => {
 
     addMessage(message, 'user');
     messageInput.value = '';
-    messageInput.focus();
+    messageInput.style.height = 'auto';
 
-    const typing = showTypingIndicator();
+    const typing = showTyping();
 
     try {
+        statusDot.className = 'status-dot thinking';
+        statusText.textContent = 'Thinking...';
+
         const res = await fetch(`${API_BASE}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -156,38 +115,196 @@ chatForm.addEventListener('submit', async (e) => {
 
         if (!res.ok) {
             const err = await res.json();
-            removeTypingIndicator();
-            addMessage(`Error: ${err.error || 'Unknown error'}`, 'assistant');
+            removeTyping();
+            addMessage(`Error: ${err.error || 'Something went wrong'}`, 'assistant', 'error');
+            statusDot.className = 'status-dot offline';
+            statusText.textContent = 'Error';
             return;
         }
 
         const data = await res.json();
-        removeTypingIndicator();
+
+        statusDot.className = 'status-dot processing';
+        statusText.textContent = 'Processing tools...';
+
+        removeTyping();
 
         for (const tc of data.toolCalls) {
             addToolCall(tc.name, tc.arguments);
         }
+
+        statusText.textContent = 'Running tools...';
+
         for (const tr of data.toolResults) {
-            addToolResult(tr.result);
+            addToolResult(tr);
         }
 
         if (data.reply) {
             addMessage(data.reply, 'assistant');
         }
 
+        statusDot.className = 'status-dot';
+        statusText.textContent = 'Ready';
+
         await Promise.all([fetchTasks(), fetchNotes()]);
     } catch (err) {
-        removeTypingIndicator();
-        addMessage(`Connection error: ${err.message}`, 'assistant');
+        removeTyping();
+        addMessage(`Connection error: ${err.message}`, 'assistant', 'error');
+        statusDot.className = 'status-dot offline';
+        statusText.textContent = 'Offline';
     } finally {
         isProcessing = false;
-        sendBtn.disabled = false;
+        sendBtn.disabled = !messageInput.value.trim();
     }
+}
+
+function showTyping() {
+    if (chatContainer.querySelector('.typing')) return;
+    const div = document.createElement('div');
+    div.className = 'typing';
+    div.id = 'typing';
+    div.innerHTML = `
+        <div class="message assistant" style="background: transparent; border: none; box-shadow: none;">
+            <div class="typing-indicator">
+                <span>•</span><span>•</span><span>•
+            </div>
+        </div>
+    `;
+    chatContainer.appendChild(div);
+    scrollToBottom();
+    return div;
+}
+
+function removeTyping() {
+    const typing = document.getElementById('typing');
+    if (typing) typing.remove();
+}
+
+function addMessage(text, role, type = '') {
+    const div = document.createElement('div');
+    div.className = `message ${role}`;
+    if (type === 'error' || type === 'system') {
+        div.classList.remove(role);
+        div.className = `message ${type}`;
+    }
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    div.innerHTML = `<div class="msg-text">${escapeHtml(text)}</div><div class="time">${timeStr}</div>`;
+    chatContainer.appendChild(div);
+    scrollToBottom();
+}
+
+function addAssistantMessage(text) {
+    addMessage(text, 'assistant');
+}
+
+function addToolCall(name, args) {
+    const div = document.createElement('div');
+    div.className = 'message-tool';
+    div.innerHTML = `
+        <div class="tool-call">
+            <span class="tool-name">${escapeHtml(name)}</span>
+            ${args ? escapeHtml(JSON.stringify(args)) : ''}
+        </div>
+    `;
+    chatContainer.appendChild(div);
+    scrollToBottom();
+}
+
+function addToolResult(result) {
+    const div = document.createElement('div');
+    div.className = 'message-tool';
+    const isSuccess = result && result.success;
+    const statusIcon = isSuccess ? '✅' : '❌';
+    const statusText = isSuccess ? 'Success' : (result?.error || 'Failed');
+    const dataPreview = isSuccess && result.data
+        ? `<pre style="margin-top:4px;white-space:pre-wrap;max-width:100%">${escapeHtml(JSON.stringify(result.data, null, 2))}</pre>`
+        : '';
+    div.innerHTML = `
+        <div class="tool-result ${isSuccess ? '' : 'error'}">
+            ${statusIcon} ${escapeHtml(statusText)}
+            ${dataPreview}
+        </div>
+    `;
+    chatContainer.appendChild(div);
+    scrollToBottom();
+}
+
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    return text
+        .toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function scrollToBottom() {
+    requestAnimationFrame(() => {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+}
+
+async function fetchTasks() {
+    try {
+        const res = await fetch(`${API_BASE}/tasks`);
+        const data = await res.json();
+
+        if (!data.tasks || !data.tasks.length) {
+            taskListEl.innerHTML = '<div class="empty-chat"><p>No tasks yet</p></div>';
+            return;
+        }
+
+        const ul = document.createElement('ul');
+        ul.className = 'item-list';
+        ul.innerHTML = data.tasks.map(t => `
+            <li class="${t.completed ? 'completed' : ''}">
+                ${escapeHtml(t.title)}
+                <div class="meta">ID: ${t.id}${t.due_date ? ` • Due: ${escapeHtml(t.due_date)}` : ''} • ${new Date(t.created_at).toLocaleDateString()}</div>
+            </li>
+        `).join('');
+        taskListEl.innerHTML = '';
+        taskListEl.appendChild(ul);
+    } catch (err) {
+        taskListEl.innerHTML = '<div class="error-message">Failed to load tasks</div>';
+    }
+}
+
+async function fetchNotes() {
+    try {
+        const res = await fetch(`${API_BASE}/notes`);
+        const data = await res.json();
+
+        if (!data.notes || !data.notes.length) {
+            noteListEl.innerHTML = '<div class="empty-chat"><p>No notes yet</p></div>';
+            return;
+        }
+
+        const ul = document.createElement('ul');
+        ul.className = 'item-list';
+        ul.innerHTML = data.notes.map(n => `
+            <li>${escapeHtml(n.content)}
+                <div class="meta">${new Date(n.created_at + 'T00:00:00').toLocaleString()}</div>
+            </li>
+        `).join('');
+        noteListEl.innerHTML = '';
+        noteListEl.appendChild(ul);
+    } catch (err) {
+        noteListEl.innerHTML = '<div class="error-message">Failed to load notes</div>';
+    }
+}
+
+window.addEventListener('online', () => {
+    isOnline = true;
+    connectionStatus.textContent = 'Network: Online';
 });
 
-refreshTasksBtn.addEventListener('click', fetchTasks);
-refreshNotesBtn.addEventListener('click', fetchNotes);
+window.addEventListener('offline', () => {
+    isOnline = false;
+    connectionStatus.textContent = 'Network: Offline (local mode)';
+});
 
-checkHealth();
-fetchTasks();
-fetchNotes();
+sendBtn.disabled = false;
