@@ -1,15 +1,12 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import { getDb, closeDb } from '../src/db/database.js';
 import { saveNote } from '../src/tools/saveNote.js';
 import { searchNotes } from '../src/tools/searchNotes.js';
 import { createTask } from '../src/tools/createTask.js';
 import { listTasks } from '../src/tools/listTasks.js';
 import { markTaskDone } from '../src/tools/markTaskDone.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { executeTool, toolDefinitions } from '../src/tools/index.js';
 
 describe('Tools', () => {
     beforeEach(() => {
@@ -40,6 +37,11 @@ describe('Tools', () => {
             const result = await saveNote({});
             assert.equal(result.success, false);
         });
+
+        test('rejects non-string text', async () => {
+            const result = await saveNote({ text: 12345 });
+            assert.equal(result.success, false);
+        });
     });
 
     describe('search_notes', () => {
@@ -54,6 +56,24 @@ describe('Tools', () => {
             const result = await searchNotes({ query: 'nonexistent' });
             assert.equal(result.success, true);
             assert.equal(result.data.results.length, 0);
+        });
+
+        test('rejects empty query', async () => {
+            const result = await searchNotes({ query: '' });
+            assert.equal(result.success, false);
+        });
+
+        test('rejects missing query', async () => {
+            const result = await searchNotes({});
+            assert.equal(result.success, false);
+        });
+
+        test('applies limit parameter', async () => {
+            await saveNote({ text: 'first note about apples' });
+            await saveNote({ text: 'second note about apples and oranges' });
+            await saveNote({ text: 'third note about apples' });
+            const result = await searchNotes({ query: 'apples', limit: 2 });
+            assert.equal(result.data.results.length, 2);
         });
     });
 
@@ -70,6 +90,22 @@ describe('Tools', () => {
             assert.equal(result.success, true);
             assert.equal(result.data.title, 'Read a book');
             assert.equal(result.data.due_date, null);
+        });
+
+        test('rejects empty title', async () => {
+            const result = await createTask({ title: '' });
+            assert.equal(result.success, false);
+        });
+
+        test('rejects missing title', async () => {
+            const result = await createTask({});
+            assert.equal(result.success, false);
+        });
+
+        test('parses ISO date format', async () => {
+            const result = await createTask({ title: 'Meeting', due_date: '2026-11-15' });
+            assert.equal(result.success, true);
+            assert.equal(result.data.due_date, '2026-11-15');
         });
     });
 
@@ -96,6 +132,16 @@ describe('Tools', () => {
             assert.equal(pendingOnly.data.tasks.length, 1);
             assert.equal(doneOnly.data.tasks.length, 1);
         });
+
+        test('returns tasks in creation order (most recent first)', async () => {
+            const t1 = await createTask({ title: 'First task' });
+            const t2 = await createTask({ title: 'Second task' });
+            const result = await listTasks({});
+            const ids = result.data.tasks.map(t => t.id).reverse();
+            const foundT1 = ids.indexOf(t1.data.id) >= 0;
+            const foundT2 = ids.indexOf(t2.data.id) >= 0;
+            assert.ok(foundT1 && foundT2);
+        });
     });
 
     describe('mark_task_done', () => {
@@ -110,6 +156,141 @@ describe('Tools', () => {
             const result = await markTaskDone({ id: 999 });
             assert.equal(result.success, false);
             assert.equal(result.error, 'Task 999 not found');
+        });
+
+        test('rejects invalid id type', async () => {
+            const result = await markTaskDone({ id: 'not-a-number' });
+            assert.equal(result.success, false);
+        });
+
+        test('rejects missing id', async () => {
+            const result = await markTaskDone({});
+            assert.equal(result.success, false);
+        });
+    });
+
+    describe('executeTool', () => {
+        test('dispatches to save_note correctly', async () => {
+            const result = await executeTool('save_note', { text: 'test note' });
+            assert.equal(result.success, true);
+        });
+
+        test('dispatches to search_notes correctly', async () => {
+            const result = await executeTool('search_notes', { query: 'test' });
+            assert.equal(result.success, true);
+        });
+
+        test('dispatches to create_task correctly', async () => {
+            const result = await executeTool('create_task', { title: 'test task' });
+            assert.equal(result.success, true);
+        });
+
+        test('dispatches to list_tasks correctly', async () => {
+            const result = await executeTool('list_tasks', {});
+            assert.equal(result.success, true);
+        });
+
+        test('dispatches to mark_task_done correctly', async () => {
+            const created = await executeTool('create_task', { title: 'test' });
+            const result = await executeTool('mark_task_done', { id: created.data.id });
+            assert.equal(result.success, true);
+        });
+
+        test('returns error for unknown tool', async () => {
+            const result = await executeTool('nonexistent_tool', {});
+            assert.equal(result.success, false);
+            assert.ok(result.error?.includes('Unknown tool'));
+        });
+
+        test('returns error for shell_exec', async () => {
+            const result = await executeTool('shell_exec', { cmd: 'ls' });
+            assert.equal(result.success, false);
+        });
+
+        test('returns error for sql_exec', async () => {
+            const result = await executeTool('sql_exec', { query: 'DROP TABLE notes' });
+            assert.equal(result.success, false);
+        });
+
+        test('returns error for file_write', async () => {
+            const result = await executeTool('file_write', { path: '/etc/passwd', content: 'hacked' });
+            assert.equal(result.success, false);
+        });
+    });
+
+    describe('toolDefinitions', () => {
+        test('exports 5 tools', () => {
+            assert.equal(toolDefinitions.length, 5);
+        });
+
+        test('all tools have required fields', () => {
+            for (const def of toolDefinitions) {
+                assert.ok(def.name);
+                assert.ok(def.description);
+                assert.ok(def.parameters);
+            }
+        });
+
+        test('all tool names match expected set', () => {
+            const names = toolDefinitions.map(d => d.name).sort();
+            assert.deepEqual(names, ['create_task', 'list_tasks', 'mark_task_done', 'save_note', 'search_notes']);
+        });
+
+        test('no dangerous tools exposed', () => {
+            const names = toolDefinitions.map(d => d.name);
+            const dangerous = ['shell_exec', 'sql_exec', 'file_write', 'file_read', 'system'];
+            for (const d of dangerous) {
+                assert.ok(!names.includes(d), `Dangerous tool "${d}" should not be in definitions`);
+            }
+        });
+    });
+
+    describe('Persistence across process restarts', () => {
+        test('data survives closeDb + getDb cycle', async () => {
+            await saveNote({ text: 'persistent note' });
+            await createTask({ title: 'persistent task' });
+
+            closeDb();
+
+            const db2 = getDb();
+            const notes = db2.prepare('SELECT COUNT(*) as count FROM notes').get();
+            const tasks = db2.prepare('SELECT COUNT(*) as count FROM tasks').get();
+            assert.equal(notes.count, 1);
+            assert.equal(tasks.count, 1);
+            closeDb();
+        });
+
+        test('data survives full DB file recreation', async () => {
+            const created = await createTask({ title: 'survives restart' });
+
+            closeDb();
+
+            await createTask({ title: 'after restart' });
+
+            const allTasks = await listTasks({});
+            assert.equal(allTasks.data.tasks.length, 2);
+            assert.ok(allTasks.data.tasks.some(t => t.id === created.data.id));
+        });
+    });
+
+    describe('SQL injection safety', () => {
+        test('save_note uses parameterized query', async () => {
+            const result = await saveNote({ text: "'; DROP TABLE notes; --" });
+            assert.equal(result.success, true);
+
+            const db = getDb();
+            const count = db.prepare('SELECT COUNT(*) as count FROM notes').get();
+            assert.equal(count.count, 1);
+        });
+
+        test('search_notes uses parameterized query', async () => {
+            await saveNote({ text: 'normal note' });
+            const result = await searchNotes({ query: "'; DROP TABLE notes; --" });
+            assert.equal(result.success, true);
+
+            const db = getDb();
+            const count = db.prepare('SELECT COUNT(*) as count FROM notes').get();
+            assert.equal(count.count, 1);
         });
     });
 });
