@@ -7,10 +7,9 @@
   "scripts": {
     "start": "QVAC_CONFIG_PATH=./qvac.config.json node src/agent.js",
     "dev": "QVAC_CONFIG_PATH=./qvac.config.json node src/agent.js",
+    "server": "QVAC_CONFIG_PATH=./qvac.config.json node src/ui/server.js",
     "test": "node --test \"tests/**/*.test.js\"",
-    "test:runner": "node --test",
-    "lint": "node --check src/**/*.js",
-    "lint:test": "node --check tests/**/*.js"
+    "lint": "node --check src/**/*.js"
   },
   "keywords": ["ai", "offline", "llm", "qvac", "sqlite"],
   "author": "",

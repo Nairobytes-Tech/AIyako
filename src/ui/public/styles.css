@@ -1,0 +1,239 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    background: #16213e;
+    border-bottom: 2px solid #0f3460;
+    flex-shrink: 0;
+}
+
+.header h1 {
+    color: #e94560;
+    font-size: 1.4rem;
+}
+
+.offline-badge {
+    background: #0f3460;
+    color: #e94560;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.status-bar {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    font-size: 0.85rem;
+    color: #8a8a9a;
+    flex-shrink: 0;
+}
+
+.status-bar #connectionStatus {
+    color: #e94560;
+}
+
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 280px;
+    background: #16213e;
+    border-right: 1px solid #0f3460;
+    flex-shrink: 0;
+    padding: 16px;
+    overflow-y: auto;
+}
+
+.sidebar-section {
+    margin-bottom: 24px;
+}
+
+.sidebar-section h2 {
+    color: #e94560;
+    font-size: 1rem;
+    margin-bottom: 8px;
+}
+
+.btn-small {
+    background: #0f3460;
+    color: #e0e0e0;
+    border: 1px solid #e94560;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+.btn-small:hover {
+    background: #1f4068;
+}
+
+.item-list {
+    list-style: none;
+}
+
+.item-list li {
+    padding: 8px 10px;
+    background: #0f3460;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    font-size: 0.9rem;
+    color: #c0c0c0;
+}
+
+.item-list li.completed {
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+.item-list li .meta {
+    font-size: 0.75rem;
+    color: #8a8a9a;
+    margin-top: 4px;
+}
+
+.main-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+}
+
+.chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.message {
+    max-width: 80%;
+    padding: 12px 16px;
+    border-radius: 16px;
+    word-wrap: break-word;
+}
+
+.message.user {
+    align-self: flex-end;
+    background: #0f3460;
+    color: #e0e0e0;
+}
+
+.message.assistant {
+    align-self: flex-start;
+    background: #1a1a3e;
+    color: #e0e0e0;
+    border: 1px solid #0f3460;
+}
+
+.message.assistant.tool {
+    background: #1a2a2a;
+    border-left: 3px solid #e94560;
+}
+
+.tool-call {
+    background: #0f3460;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+.tool-result {
+    background: #1a2a2a;
+    border-left: 2px solid #4a90d9;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #a0cfa0;
+}
+
+.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.error {
+    color: #e94560;
+    font-size: 0.85rem;
+}
+
+.chat-form {
+    display: flex;
+    padding: 16px;
+    background: #16213e;
+    border-top: 1px solid #0f3460;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.chat-form textarea {
+    flex: 1;
+    background: #1a1a3e;
+    color: #e0e0e0;
+    border: 1px solid #0f3460;
+    border-radius: 12px;
+    padding: 10px 16px;
+    resize: none;
+    font-family: inherit;
+    font-size: 0.95rem;
+    outline: none;
+}
+
+.chat-form textarea:focus {
+    border-color: #e94560;
+}
+
+#sendBtn {
+    background: #e94560;
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    padding: 0 20px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+#sendBtn:disabled {
+    background: #555;
+    cursor: not-allowed;
+}
+
+.empty-state {
+    text-align: center;
+    color: #8a8a9a;
+    padding: 40px;
+    font-style: italic;
+}

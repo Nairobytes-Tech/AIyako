@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kioo AI — Offline Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <h1>Kioo AI</h1>
+            <span class="offline-badge">Local Only</span>
+        </header>
+
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <h2>Tasks</h2>
+                <button id="refreshTasks" class="btn-small">Refresh</button>
+                <ul id="taskList" class="item-list"></ul>
+            </div>
+            <div class="sidebar-section">
+                <h2>Notes</h2>
+                <button id="refreshNotes" class="btn-small">Refresh</button>
+                <ul id="noteList" class="item-list"></ul>
+            </div>
+        </div>
+
+        <main class="main-content">
+            <div id="status" class="status-bar">
+                <span id="modelStatus">Model: Loading...</span>
+                <span id="connectionStatus">Network: Offline</span>
+            </div>
+            <div id="chatContainer" class="chat-container"></div>
+            <form id="chatForm" class="chat-form">
+                <textarea id="messageInput" placeholder="Ask Kioo..." rows="1" required></textarea>
+                <button type="submit" id="sendBtn">Send</button>
+            </form>
+        </main>
+    </div>
+    <script src="app.js" type="module"></script>
+</body>
+</html>
