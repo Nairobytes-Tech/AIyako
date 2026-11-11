@@ -41,7 +41,7 @@ npm test
 ## Testing Policy
 
 - Tests use Node 22's built-in `node:test` (no external test framework needed)
-- Run: `npm test` (88 tests, must all pass before committing; requires Node 22)
+- Run: `npm test` (94 tests, must all pass before committing; requires Node 22)
 - Do NOT commit `data/kioo.db` (gitignored)
 - Do NOT commit model weights (gitignored)
 
@@ -61,7 +61,7 @@ npm test
 - `src/ui/server.js` — HTTP server for web interface
 - `src/ui/public/` — Static frontend assets
 - `src/types/index.ts` — TypeScript type definitions
-- `tests/` — Test suite (88 tests)
+- `tests/` — Test suite (94 tests)
 
 ## Approval Gate
 

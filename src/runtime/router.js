@@ -19,6 +19,7 @@ const COMPLEXITY_KEYWORDS = [
 
 const CONNECTOR_PATTERN = /\b(and then|after that|also|multiple|all of|first|second|then)\b/;
 const CODE_PATTERN = /```|\bfunction\b|\bclass\b|\bimport\b|\bselect\b|\bcreate table\b/;
+const WEB_SEARCH_PATTERN = /\b(web search|search the web|search online|search for|look up|lookup|google|latest|news|current events|on the internet|online)\b/;
 
 export function scoreComplexity(message) {
     const text = String(message || '').toLowerCase();
@@ -45,6 +46,10 @@ export function scoreComplexity(message) {
 
     if (CODE_PATTERN.test(text)) {
         score += 1;
+    }
+
+    if (WEB_SEARCH_PATTERN.test(text)) {
+        score += 2;
     }
 
     return score;

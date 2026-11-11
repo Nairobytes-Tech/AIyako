@@ -35,6 +35,12 @@ describe('Hybrid router', () => {
         assert.equal(strict.provider, 'local');
     });
 
+    test('web search turns escalate when a stronger model is configured', () => {
+        const route = chooseRoute('Search the web for Austin Obimbo', { escalationModelPath: ESCALATION_PATH });
+        assert.equal(route.provider, 'escalation');
+        assert.equal(route.reason, 'complexity threshold reached');
+    });
+
     test('scoreComplexity rewards code and multi-part requests', () => {
         assert.ok(scoreComplexity('```js\nconst x = 1;\n```') >= 1);
         assert.ok(scoreComplexity('do this, and then that, also that?') >= 1);

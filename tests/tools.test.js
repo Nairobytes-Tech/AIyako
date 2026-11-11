@@ -8,6 +8,7 @@ import { listTasks } from '../src/tools/listTasks.js';
 import { markTaskDone } from '../src/tools/markTaskDone.js';
 import { webSearch, clearWebSearchCache } from '../src/tools/webSearch.js';
 import { executeTool, toolDefinitions } from '../src/tools/index.js';
+import { formatToolResult, formatHistoryForModel } from '../src/tools/format.js';
 
 describe('Tools', () => {
     beforeEach(() => {
@@ -263,6 +264,77 @@ describe('Tools', () => {
 
             const result = await executeTool('web_search', { query: 'dispatch query' });
             assert.equal(result.success, true);
+        });
+    });
+
+    describe('tool result formatting', () => {
+        test('formats web results as numbered text', () => {
+            const text = formatToolResult('web_search', {
+                success: true,
+                data: {
+                    query: 'austin',
+                    results: [{
+                        title: 'Austin Obimbo - Portfolio',
+                        url: 'https://example.com/austin',
+                        snippet: 'Engineer with four years of experience',
+                    }],
+                },
+            }, { query: 'austin' });
+
+            assert.match(text, /Web search results for "austin"/);
+            assert.match(text, /1\. Austin Obimbo - Portfolio/);
+            assert.match(text, /URL: https:\/\/example\.com\/austin/);
+            assert.match(text, /Engineer with four years of experience/);
+        });
+
+        test('reports empty web results', () => {
+            const text = formatToolResult('web_search', {
+                success: true,
+                data: { query: 'nobody', results: [] },
+            }, { query: 'nobody' });
+
+            assert.equal(text, 'Web search returned no results for "nobody".');
+        });
+
+        test('reports tool failures clearly', () => {
+            const text = formatToolResult('web_search', {
+                success: false,
+                error: 'SearXNG request timed out',
+            }, { query: 'test' });
+
+            assert.equal(text, 'Tool web_search failed: SearXNG request timed out');
+        });
+
+        test('keeps non-search tool output as JSON', () => {
+            const result = { success: true, data: { id: 1, content: 'note' } };
+            assert.equal(formatToolResult('save_note', result), JSON.stringify(result));
+        });
+
+        test('formats tool history for the model without mutating stored history', () => {
+            const history = [
+                {
+                    role: 'assistant',
+                    content: '',
+                    tool_calls: [{ id: 'call-1', name: 'web_search', arguments: { query: 'austin' } }],
+                },
+                {
+                    role: 'tool',
+                    content: JSON.stringify({
+                        success: true,
+                        data: {
+                            query: 'austin',
+                            results: [{ title: 'Austin Obimbo', url: 'https://example.com', snippet: 'Engineer' }],
+                        },
+                    }),
+                    tool_call_id: 'call-1',
+                    name: 'web_search',
+                },
+            ];
+
+            const formatted = formatHistoryForModel(history);
+            assert.match(formatted[1].content, /1\. Austin Obimbo/);
+            assert.equal(history[1].content.startsWith('{'), true);
+            assert.notEqual(formatted[1].content, history[1].content);
         });
     });
 

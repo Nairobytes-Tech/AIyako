@@ -16,7 +16,7 @@ Kioo AI gives you a private, offline AI assistant that can answer questions, man
 - **Persistent sessions** — Conversation history survives restarts, scoped per session
 - **Goals & artifacts** — Task-driven goals are extracted from tool results
 - **Approval gate** — Require explicit approval before sensitive tools run
-- **Hybrid routing** — Escalates complex turns to an optional larger local model
+- **Hybrid routing** — Escalates complex and web-search turns to an optional larger local model
 - **Web UI** — Responsive browser interface for laptop browsers
 - **CLI mode** — Direct terminal access to the agent
 - **Type-safe tools** — Zod schema validation on all tool inputs
@@ -168,7 +168,7 @@ npm test
 | `src/ui/public/` | Static frontend assets (HTML, CSS, JS) |
 | `src/types/index.ts` | TypeScript type definitions |
 | `docker-compose.yml` / `searxng/` | Self-hosted SearXNG for `web_search` |
-| `tests/` | Test suite (88 tests) |
+| `tests/` | Test suite (94 tests) |
 
 ## Available Tools
 
@@ -192,8 +192,8 @@ npm test
 ## Test Results
 
 ```
-# tests 88
-# pass 88
+# tests 94
+# pass 94
 # fail 0
 ```
 

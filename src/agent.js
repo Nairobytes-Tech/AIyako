@@ -1,5 +1,6 @@
 import { loadModel, completion, unloadModel } from '@qvac/sdk';
 import { toolDefinitions, executeTool } from './tools/index.js';
+import { formatHistoryForModel } from './tools/format.js';
 import { closeDb } from './db/database.js';
 
 const DEFAULT_MODEL_PATH = '/home/lulwanda/projects/kioo-ai/models/qwen3-0.6b-q4_0.gguf';
@@ -12,7 +13,7 @@ if (MODEL_PATH.startsWith('http') || MODEL_PATH.startsWith('https')) {
     );
 }
 
-export const SYSTEM_PROMPT = `You are Kioo, a local AI assistant that runs entirely offline. Your job is to help users manage their notes and tasks using the available tools.
+export const SYSTEM_PROMPT = `You are Kioo, a local AI assistant that runs on the user's device. Your job is to help users manage their notes and tasks using the available tools.
 
 Available tools:
 - save_note: Save information for future reference
@@ -22,7 +23,15 @@ Available tools:
 - mark_task_done: Mark a task as completed
 - web_search: Search the web for current information using a local SearXNG instance
 
-When you need current or time-sensitive information that is not in local notes, use web_search and cite the result URLs. Always check the tool result to confirm the action was successful before telling the user it was done.`;
+When you need current or time-sensitive information that is not in local notes, use web_search.
+
+After a tool returns results, treat that data as your source of truth:
+- Summarize the most relevant findings instead of dumping raw data.
+- Cite the URLs you used.
+- If the requested name or topic appears in result titles or snippets, treat it as a potential match and explain what you found.
+- Do not claim there are no matches when the results contain relevant terms.
+- If results are weak or partial, say what was found and what is missing. Never invent facts.
+- Always check the tool result to confirm the action was successful before telling the user it was done.`;
 
 function stableStringify(value) {
     if (value === null || typeof value !== 'object') {
@@ -77,7 +86,7 @@ export async function createCompletion(modelId, history, options = {}) {
     for (let i = 0; i < maxIterations; i++) {
         const result = completion({
             modelId,
-            history,
+            history: formatHistoryForModel(history),
             stream: true,
             captureThinking: true,
             tools: toolDefinitions,
