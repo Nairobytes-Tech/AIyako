@@ -23,32 +23,53 @@ Available tools:
 
 Always check the tool result to confirm the action was successful before telling the user it was done.`;
 
-let _modelId = null;
+function stableStringify(value) {
+    if (value === null || typeof value !== 'object') {
+        return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(stableStringify).join(',')}]`;
+    }
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+}
+
+export function toolCallKey(name, args) {
+    return `${name}:${stableStringify(args === undefined ? null : args)}`;
+}
+
+const _models = new Map();
 
 export async function loadAgent(options = {}) {
-    if (_modelId) {
-        return _modelId;
+    const modelPath = options.modelPath || MODEL_PATH;
+
+    if (_models.has(modelPath)) {
+        return _models.get(modelPath);
     }
-    _modelId = await loadModel({
-        modelSrc: MODEL_PATH,
+
+    const modelId = await loadModel({
+        modelSrc: modelPath,
         modelType: 'llamacpp-completion',
         modelConfig: { ctx_size: options.ctxSize || 8192, tools: true },
     });
-    return _modelId;
+    _models.set(modelPath, modelId);
+    return modelId;
 }
 
 export async function unloadAgent() {
-    if (_modelId) {
-        await unloadModel({ modelId: _modelId });
-        _modelId = null;
+    for (const modelId of _models.values()) {
+        await unloadModel({ modelId });
     }
+    _models.clear();
     closeDb();
 }
 
-export async function createCompletion(modelId, history) {
+export async function createCompletion(modelId, history, options = {}) {
     const events = [];
     const maxIterations = 10;
     const maxToolCallsPerTurn = 5;
+    const approvalGate = typeof options.approvalGate === 'function' ? options.approvalGate : null;
+    const repeatResults = options.repeatResults instanceof Map ? options.repeatResults : null;
+    const executedCalls = new Map();
 
     for (let i = 0; i < maxIterations; i++) {
         const result = completion({
@@ -93,18 +114,50 @@ export async function createCompletion(modelId, history) {
 
         if (toolCalls.length > 0) {
             const content = (final.contentText || assistantContent).trim();
-            history.push({ role: 'assistant', content: content || '[tool_calls]' });
+            history.push({
+                role: 'assistant',
+                content: content || '',
+                tool_calls: toolCalls.map(call => ({
+                    id: call.id,
+                    name: call.name,
+                    arguments: call.arguments,
+                })),
+            });
+
+            const requiresApproval = approvalGate
+                ? toolCalls.some(call => approvalGate(call))
+                : false;
+
+            if (requiresApproval) {
+                return { history, events, pendingToolCalls: toolCalls };
+            }
+
+            let repeatedCount = 0;
 
             for (const call of toolCalls) {
-                const toolEvent = { type: 'toolExecute', name: call.name, arguments: call.arguments };
-
+                const key = toolCallKey(call.name, call.arguments);
                 let toolResult;
-                try {
-                    toolResult = await executeTool(call.name, call.arguments);
-                } catch (err) {
-                    toolResult = { success: false, error: err.message };
+                let repeated = false;
+
+                if (executedCalls.has(key)) {
+                    toolResult = executedCalls.get(key);
+                    repeated = true;
+                } else if (repeatResults && repeatResults.has(key)) {
+                    toolResult = repeatResults.get(key);
+                    repeated = true;
+                } else {
+                    try {
+                        toolResult = await executeTool(call.name, call.arguments);
+                    } catch (err) {
+                        toolResult = { success: false, error: err.message };
+                    }
+                    executedCalls.set(key, toolResult);
                 }
 
+                if (repeated) repeatedCount += 1;
+
+                const toolEvent = { type: 'toolExecute', name: call.name, arguments: call.arguments };
+                if (repeated) toolEvent.repeated = true;
                 if (!toolResult.success) {
                     toolEvent.error = toolResult.error;
                 }
@@ -115,7 +168,16 @@ export async function createCompletion(modelId, history) {
                 history.push({
                     role: 'tool',
                     content: JSON.stringify(toolResult),
+                    tool_call_id: call.id,
+                    name: call.name,
                 });
+            }
+
+            if (repeatedCount === toolCalls.length) {
+                const finalContent = 'That action was already completed.';
+                events.push({ type: 'final', content: finalContent });
+                history.push({ role: 'assistant', content: finalContent });
+                break;
             }
         } else {
             const content = (final.contentText || assistantContent).trim();
@@ -131,7 +193,7 @@ export async function createCompletion(modelId, history) {
         }
     }
 
-    return { history, events };
+    return { history, events, pendingToolCalls: [] };
 }
 
 export async function runAgent(userInput, options = {}) {
