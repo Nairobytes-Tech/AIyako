@@ -12,6 +12,10 @@
             <div class="logo">
                 <span class="logo-text">Kioo</span>
             </div>
+            <div class="header-controls">
+                <select id="sessionSelect" class="session-select" aria-label="Switch session"></select>
+                <button id="newChatBtn" class="new-chat-btn" type="button" title="New chat" aria-label="New chat">+</button>
+            </div>
             <div class="status-line">
                 <span class="status-dot" id="statusDot"></span>
                 <span class="status-text" id="statusText">Idle</span>
@@ -38,6 +42,10 @@
                 <div class="section-header">
                     <h2>Goals</h2>
                 </div>
+                <form class="goal-form" id="goalForm">
+                    <input id="goalInput" type="text" maxlength="200" placeholder="Add a goal..." autocomplete="off">
+                    <button type="submit" class="goal-add-btn">Add</button>
+                </form>
                 <div class="items-container" id="tasksContainer"></div>
             </section>
 

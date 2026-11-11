@@ -6,6 +6,7 @@ import { searchNotes } from '../src/tools/searchNotes.js';
 import { createTask } from '../src/tools/createTask.js';
 import { listTasks } from '../src/tools/listTasks.js';
 import { markTaskDone } from '../src/tools/markTaskDone.js';
+import { webSearch, clearWebSearchCache } from '../src/tools/webSearch.js';
 import { executeTool, toolDefinitions } from '../src/tools/index.js';
 
 describe('Tools', () => {
@@ -169,6 +170,102 @@ describe('Tools', () => {
         });
     });
 
+    describe('web_search', () => {
+        const originalFetch = globalThis.fetch;
+        const originalUrl = process.env.SEARXNG_URL;
+
+        beforeEach(() => {
+            clearWebSearchCache();
+            process.env.SEARXNG_URL = 'http://searx.test:8080';
+        });
+
+        afterEach(() => {
+            globalThis.fetch = originalFetch;
+            clearWebSearchCache();
+            if (originalUrl === undefined) {
+                delete process.env.SEARXNG_URL;
+            } else {
+                process.env.SEARXNG_URL = originalUrl;
+            }
+        });
+
+        test('normalizes, dedupes and limits results', async () => {
+            globalThis.fetch = async url => {
+                assert.match(url.toString(), /^http:\/\/searx\.test:8080\/search\?/);
+                assert.equal(url.searchParams.get('format'), 'json');
+                return new Response(JSON.stringify({
+                    results: [
+                        { title: 'First', url: 'https://first.example', content: 'first snippet' },
+                        { title: 'Duplicate', url: 'https://first.example', content: 'duplicate' },
+                        { title: 'Second', url: 'https://second.example', content: 'second snippet' },
+                        { title: 'Third', url: 'https://third.example', content: 'third snippet' },
+                    ],
+                }), { status: 200 });
+            };
+
+            const result = await webSearch({ query: 'kioo ai', num_results: 2 });
+            assert.equal(result.success, true);
+            assert.equal(result.data.cached, false);
+            assert.deepEqual(result.data.results, [
+                { title: 'First', url: 'https://first.example', snippet: 'first snippet' },
+                { title: 'Second', url: 'https://second.example', snippet: 'second snippet' },
+            ]);
+        });
+
+        test('caches repeated queries', async () => {
+            let calls = 0;
+            globalThis.fetch = async () => {
+                calls += 1;
+                return new Response(JSON.stringify({
+                    results: [{ title: 'Cached', url: 'https://cached.example', content: 'cached snippet' }],
+                }), { status: 200 });
+            };
+
+            const first = await webSearch({ query: 'cached query', num_results: 1 });
+            const second = await webSearch({ query: 'cached query', num_results: 1 });
+
+            assert.equal(calls, 1);
+            assert.equal(first.data.cached, false);
+            assert.equal(second.data.cached, true);
+            assert.deepEqual(second.data.results, first.data.results);
+        });
+
+        test('rejects invalid input', async () => {
+            assert.equal((await webSearch({ query: '' })).success, false);
+            assert.equal((await webSearch({ query: 'x', num_results: 100 })).success, false);
+        });
+
+        test('reports backend errors', async () => {
+            globalThis.fetch = async () => new Response('unavailable', { status: 502 });
+            const result = await webSearch({ query: 'error query' });
+            assert.equal(result.success, false);
+            assert.match(result.error, /HTTP 502/);
+        });
+
+        test('rejects invalid backend payloads', async () => {
+            globalThis.fetch = async () => new Response(JSON.stringify({}), { status: 200 });
+            const result = await webSearch({ query: 'invalid payload' });
+            assert.equal(result.success, false);
+            assert.match(result.error, /invalid response/i);
+        });
+
+        test('reports network failures', async () => {
+            globalThis.fetch = async () => { throw new Error('boom'); };
+            const result = await webSearch({ query: 'network query' });
+            assert.equal(result.success, false);
+            assert.match(result.error, /Search request failed/);
+        });
+
+        test('dispatches through executeTool', async () => {
+            globalThis.fetch = async () => new Response(JSON.stringify({
+                results: [{ title: 'Dispatch', url: 'https://dispatch.example', content: 'ok' }],
+            }), { status: 200 });
+
+            const result = await executeTool('web_search', { query: 'dispatch query' });
+            assert.equal(result.success, true);
+        });
+    });
+
     describe('executeTool', () => {
         test('dispatches to save_note correctly', async () => {
             const result = await executeTool('save_note', { text: 'test note' });
@@ -219,8 +316,8 @@ describe('Tools', () => {
     });
 
     describe('toolDefinitions', () => {
-        test('exports 5 tools', () => {
-            assert.equal(toolDefinitions.length, 5);
+        test('exports 6 tools', () => {
+            assert.equal(toolDefinitions.length, 6);
         });
 
         test('all tools have required fields', () => {
@@ -233,7 +330,7 @@ describe('Tools', () => {
 
         test('all tool names match expected set', () => {
             const names = toolDefinitions.map(d => d.name).sort();
-            assert.deepEqual(names, ['create_task', 'list_tasks', 'mark_task_done', 'save_note', 'search_notes']);
+            assert.deepEqual(names, ['create_task', 'list_tasks', 'mark_task_done', 'save_note', 'search_notes', 'web_search']);
         });
 
         test('no dangerous tools exposed', () => {

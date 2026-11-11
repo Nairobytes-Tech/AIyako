@@ -20,8 +20,9 @@ Available tools:
 - create_task: Create a task with optional due date
 - list_tasks: List all tasks, optionally filtered by completion
 - mark_task_done: Mark a task as completed
+- web_search: Search the web for current information using a local SearXNG instance
 
-Always check the tool result to confirm the action was successful before telling the user it was done.`;
+When you need current or time-sensitive information that is not in local notes, use web_search and cite the result URLs. Always check the tool result to confirm the action was successful before telling the user it was done.`;
 
 function stableStringify(value) {
     if (value === null || typeof value !== 'object') {
@@ -69,6 +70,8 @@ export async function createCompletion(modelId, history, options = {}) {
     const maxToolCallsPerTurn = 5;
     const approvalGate = typeof options.approvalGate === 'function' ? options.approvalGate : null;
     const repeatResults = options.repeatResults instanceof Map ? options.repeatResults : null;
+    const onToolCall = typeof options.onToolCall === 'function' ? options.onToolCall : null;
+    const onToolResult = typeof options.onToolResult === 'function' ? options.onToolResult : null;
     const executedCalls = new Map();
 
     for (let i = 0; i < maxIterations; i++) {
@@ -146,11 +149,13 @@ export async function createCompletion(modelId, history, options = {}) {
                     toolResult = repeatResults.get(key);
                     repeated = true;
                 } else {
+                    if (onToolCall) onToolCall(call);
                     try {
                         toolResult = await executeTool(call.name, call.arguments);
                     } catch (err) {
                         toolResult = { success: false, error: err.message };
                     }
+                    if (onToolResult) onToolResult(call);
                     executedCalls.set(key, toolResult);
                 }
 

@@ -76,12 +76,29 @@ export interface MarkTaskDoneResult extends ToolResult<{
     completed: boolean;
 }> {}
 
+export interface WebSearchInput {
+    query: string;
+    num_results?: number;
+}
+
+export interface WebSearchResultItem {
+    title: string;
+    url: string;
+    snippet: string;
+}
+
+export interface WebSearchResult extends ToolResult<{
+    query: string;
+    results: WebSearchResultItem[];
+    cached: boolean;
+}> {}
+
 export interface ToolCall {
     name: string;
     arguments: Record<string, unknown>;
 }
 
-export type ToolName = 'save_note' | 'search_notes' | 'create_task' | 'list_tasks' | 'mark_task_done';
+export type ToolName = 'save_note' | 'search_notes' | 'create_task' | 'list_tasks' | 'mark_task_done' | 'web_search';
 
 export type SessionStatus = 'idle' | 'thinking' | 'tool' | 'waiting_approval';
 

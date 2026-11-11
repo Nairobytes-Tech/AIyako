@@ -91,6 +91,10 @@ async function executeApprovalsAndResume(sessionId, options, priorEvents = []) {
     const repeatResults = new Map();
 
     for (const approval of unexecuted) {
+        if (approval.status !== 'rejected') {
+            setStatus(sessionId, SessionStatus.TOOL, { tool: approval.tool_name });
+        }
+
         const result = approval.status === 'rejected'
             ? { success: false, error: 'Rejected by user' }
             : await safeExecute({ name: approval.tool_name, arguments: approval.tool_args });
@@ -132,7 +136,12 @@ async function driveCompletion(sessionId, options = {}, extraEvents = [], repeat
     const history = buildHistory(messages);
     const initialLength = history.length;
 
-    const result = await createCompletion(modelId, history, { approvalGate: gate, repeatResults });
+    const result = await createCompletion(modelId, history, {
+        approvalGate: gate,
+        repeatResults,
+        onToolCall: call => setStatus(sessionId, SessionStatus.TOOL, { tool: call.name }),
+        onToolResult: () => setStatus(sessionId, SessionStatus.THINKING),
+    });
 
     persistNewMessages(sessionId, history.slice(initialLength), result.events);
 

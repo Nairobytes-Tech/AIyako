@@ -3,6 +3,7 @@ import { searchNotes, searchNotesSchema } from './searchNotes.js';
 import { createTask, createTaskSchema } from './createTask.js';
 import { listTasks, listTasksSchema } from './listTasks.js';
 import { markTaskDone, markTaskDoneSchema } from './markTaskDone.js';
+import { webSearch, webSearchSchema } from './webSearch.js';
 
 export const toolDefinitions = [
     {
@@ -30,6 +31,11 @@ export const toolDefinitions = [
         description: 'Mark a task as completed by its ID. Use this when the user has finished a task.',
         parameters: markTaskDoneSchema,
     },
+    {
+        name: 'web_search',
+        description: 'Search the web for current information using the local SearXNG instance. Returns titles, URLs, and snippets. Use this for recent or time-sensitive information not stored locally, and cite the result URLs.',
+        parameters: webSearchSchema,
+    },
 ];
 
 export const executeTool = async (name, args) => {
@@ -44,9 +50,11 @@ export const executeTool = async (name, args) => {
             return await listTasks(args);
         case 'mark_task_done':
             return await markTaskDone(args);
+        case 'web_search':
+            return await webSearch(args);
         default:
             return { success: false, error: `Unknown tool: ${name}` };
     }
 };
 
-export { saveNote, searchNotes, createTask, listTasks, markTaskDone };
+export { saveNote, searchNotes, createTask, listTasks, markTaskDone, webSearch };

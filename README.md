@@ -8,10 +8,11 @@ Kioo AI gives you a private, offline AI assistant that can answer questions, man
 
 ## Features
 
-- **Fully offline** — No internet required after initial setup
+- **Offline by default** — Local inference and notes/tasks need no internet; optional `web_search` uses a local SearXNG instance
 - **Local inference** — Runs on-device via QVAC SDK (llama.cpp)
 - **Note management** — Save and search notes with natural language
 - **Task tracking** — Create, list, and complete tasks
+- **Self-hosted web search** — Query current information through a local SearXNG instance
 - **Persistent sessions** — Conversation history survives restarts, scoped per session
 - **Goals & artifacts** — Task-driven goals are extracted from tool results
 - **Approval gate** — Require explicit approval before sensitive tools run
@@ -73,6 +74,20 @@ The `qvac.config.json` is already configured for offline operation:
 }
 ```
 
+### Optional: self-hosted web search
+
+The `web_search` tool uses a local [SearXNG](https://docs.searxng.org/) instance.
+No API keys or cloud search services are required.
+
+```bash
+docker compose up -d searxng
+```
+
+This starts SearXNG at `http://localhost:8080` with JSON output enabled via
+`searxng/settings.yml`. Point the agent at a different instance with
+`SEARXNG_URL`. If SearXNG is not running, `web_search` returns an error but the
+rest of Kioo continues to work offline.
+
 ## Usage
 
 ### CLI Mode
@@ -89,9 +104,11 @@ QVAC_CONFIG_PATH=./qvac.config.json npm run server
 
 Then open http://localhost:3000 in your browser.
 
-The web UI keeps a session ID in `localStorage` and sends each turn to
+The web UI keeps the active session in `localStorage` and sends each turn to
 `POST /sessions/:id/chat`. Sessions, messages, goals, and artifacts are persisted
-in SQLite, so reloading the page restores the conversation.
+in SQLite, so reloading the page restores the conversation. The header switches
+between sessions or starts a new chat, live status streams via SSE, goals can be
+added and edited inline, and the Library separates notes from artifacts.
 
 ### Configuration
 
@@ -100,6 +117,7 @@ in SQLite, so reloading the page restores the conversation.
 | `QVAC_CONFIG_PATH` | — | Path to QVAC config (`./qvac.config.json`) |
 | `QVAC_MODEL_PATH` | Qwen3-600M | Local GGUF for the primary model |
 | `KIOO_ESCALATION_MODEL_PATH` | unset | Optional larger local GGUF for complex turns |
+| `SEARXNG_URL` | `http://localhost:8080` | Local SearXNG base URL for `web_search` |
 | `KIOO_APPROVAL_TOOLS` | unset | Comma-separated tools requiring approval |
 | `KIOO_SKIP_MODEL` | unset | Set to `1` to run the server without loading a model |
 | `PORT` / `HOST` | `3000` / `localhost` | HTTP server binding |
@@ -114,6 +132,7 @@ in SQLite, so reloading the page restores the conversation.
 | `GET` | `/sessions/:id` | Session with messages, goals, artifacts |
 | `DELETE` | `/sessions/:id` | Delete a session and its data |
 | `POST` | `/sessions/:id/chat` | Run a turn in a session |
+| `GET` | `/sessions/:id/events` | Server-sent status events for a session |
 | `GET`/`POST` | `/sessions/:id/goals` | List or create goals |
 | `PATCH` | `/goals/:id` | Update a goal |
 | `GET` | `/sessions/:id/approvals` | List approvals for a session |
@@ -132,7 +151,7 @@ npm test
 - **QVAC SDK** — Local LLM inference engine (llama.cpp backend)
 - **SQLite** (`node:sqlite`, built into Node 22) — Local persistence for notes, tasks, sessions, messages, goals, and artifacts
 - **Runtime Layer** — Owns session lifecycle, message history, status events, goals, approvals, and hybrid routing; `runTurn()` wraps the QVAC tool loop
-- **Agent Tools** — `save_note`, `search_notes`, `create_task`, `list_tasks`, `mark_task_done`
+- **Agent Tools** — `save_note`, `search_notes`, `create_task`, `list_tasks`, `mark_task_done`, `web_search`
 - **Web Server** — Built-in HTTP server with static file serving + API endpoints
 - **Offline-first** — All data and compute stays on-device
 
@@ -148,7 +167,8 @@ npm test
 | `src/ui/server.js` | HTTP server for web interface |
 | `src/ui/public/` | Static frontend assets (HTML, CSS, JS) |
 | `src/types/index.ts` | TypeScript type definitions |
-| `tests/` | Test suite (79 tests) |
+| `docker-compose.yml` / `searxng/` | Self-hosted SearXNG for `web_search` |
+| `tests/` | Test suite (88 tests) |
 
 ## Available Tools
 
@@ -159,6 +179,7 @@ npm test
 | `create_task` | `{ title: string, due_date?: string }` | Create a task ("tomorrow" parsed automatically) |
 | `list_tasks` | `{ completed?: boolean }` | List tasks, optional completion filter |
 | `mark_task_done` | `{ id: number }` | Mark a task as completed |
+| `web_search` | `{ query: string, num_results?: number }` | Search the web via local SearXNG (cached 5 min) |
 
 ## Security
 
@@ -171,8 +192,8 @@ npm test
 ## Test Results
 
 ```
-# tests 79
-# pass 79
+# tests 88
+# pass 88
 # fail 0
 ```
 
@@ -206,6 +227,7 @@ Test coverage includes:
 - **Multi-step planning**: Qwen3-600M may not reliably chain multiple tool calls in a single turn (e.g., "list tasks and mark #1 done"). Workarounds: use explicit tool calls in the UI.
 - **Tool use reliability**: ~80% of requests result in correct tool invocation. When tools fail, the agent falls back to a generic response.
 - **Duplicated tool calls**: The small model occasionally repeats an identical tool call. The agent short-circuits repeats to prevent duplicate side effects, but you may see a "already completed" reply.
+- **Web search**: `web_search` requires a reachable SearXNG instance and outbound network access from that instance. Results are cached for 5 minutes.
 - **GPU only**: Tested on GPU; CPU-only fallback not verified.
 
 ## License

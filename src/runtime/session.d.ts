@@ -30,7 +30,11 @@ export declare function appendMessage(
     }
 ): Message;
 
-export declare function setStatus(sessionId: string, status: SessionStatus): boolean;
+export declare function setStatus(
+    sessionId: string,
+    status: SessionStatus,
+    meta?: { tool?: string }
+): boolean;
 
 export declare function getMessages(sessionId: string, limit?: number): Message[];
 

@@ -127,7 +127,7 @@ export function appendMessage(sessionId, role, content, meta = {}) {
     };
 }
 
-export function setStatus(sessionId, status) {
+export function setStatus(sessionId, status, meta = {}) {
     assertStatus(status);
 
     const db = getDb();
@@ -137,7 +137,7 @@ export function setStatus(sessionId, status) {
     ).run(status, timestamp, sessionId);
 
     if (result.changes > 0) {
-        emitStatus({ sessionId, status, updated_at: timestamp });
+        emitStatus({ sessionId, status, ...meta, updated_at: timestamp });
     }
 
     return result.changes > 0;

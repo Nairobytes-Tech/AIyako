@@ -1,0 +1,15 @@
+use_default_settings: true
+
+general:
+  instance_name: "Kioo Search"
+
+server:
+  secret_key: "kioo-local-dev-key-change-me"
+  limiter: false
+  image_proxy: false
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json

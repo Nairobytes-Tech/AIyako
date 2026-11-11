@@ -52,3 +52,5 @@ export declare const searchNotes: (input: SearchNotesInput) => Promise<SearchNot
 export declare const createTask: (input: CreateTaskInput) => Promise<CreateTaskResult>;
 export declare const listTasks: (input: ListTasksInput) => Promise<ListTasksResult>;
 export declare const markTaskDone: (input: MarkTaskDoneInput) => Promise<MarkTaskDoneResult>;
+export declare const webSearch: (input: import('../types/index.js').WebSearchInput) => Promise<import('../types/index.js').WebSearchResult>;
+export declare const clearWebSearchCache: () => void;

@@ -42,6 +42,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 10px;
     padding: 14px 20px;
     background: rgba(26, 31, 52, 0.95);
     border-bottom: 1px solid var(--border);
@@ -57,12 +58,55 @@ body {
     letter-spacing: -0.02em;
 }
 
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.session-select {
+    max-width: 118px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 6px;
+    font: inherit;
+    font-size: 0.72rem;
+    outline: none;
+    cursor: pointer;
+}
+
+.session-select:focus {
+    border-color: var(--pink);
+}
+
+.new-chat-btn {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    background: var(--pink);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.new-chat-btn:hover {
+    background: var(--pink-hover);
+}
+
 .status-line {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
+    white-space: nowrap;
 }
 
 .status-dot {
@@ -517,6 +561,74 @@ body {
 
 .nav-icon {
     font-size: 1.4rem;
+}
+
+/* Goal form */
+.goal-form {
+    display: flex;
+    gap: 8px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.goal-form input {
+    flex: 1;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font: inherit;
+    font-size: 0.85rem;
+    outline: none;
+}
+
+.goal-form input:focus {
+    border-color: var(--pink);
+}
+
+.goal-add-btn {
+    background: var(--pink);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 0 16px;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.goal-add-btn:hover {
+    background: var(--pink-hover);
+}
+
+.goal-controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.goal-status,
+.goal-progress {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 8px;
+    font: inherit;
+    font-size: 0.72rem;
+    outline: none;
+}
+
+.goal-status:focus,
+.goal-progress:focus {
+    border-color: var(--pink);
+}
+
+.goal-progress {
+    flex: 1;
+    min-width: 0;
 }
 
 /* Lists */

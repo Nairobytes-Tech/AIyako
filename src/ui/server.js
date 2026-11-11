@@ -8,6 +8,7 @@ import { runTurn, resolveApproval } from '../runtime/agentRunner.js';
 import { createSession, getSession, listSessions, deleteSession } from '../runtime/session.js';
 import { addGoal, listGoals, updateGoal } from '../runtime/goals.js';
 import { listPendingApprovals } from '../runtime/approvals.js';
+import { onStatusChange } from '../runtime/status.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -200,6 +201,49 @@ async function startServer() {
                     return send(res, jsonResponse(400, { error: 'Invalid JSON body' }));
                 }
                 return handleChat(res, sessionId, payload.message);
+            }
+
+            if (parts.length === 3 && parts[2] === 'events' && method === 'GET') {
+                const session = getSession(sessionId);
+                if (!session) {
+                    return send(res, jsonResponse(404, { error: 'Session not found' }));
+                }
+
+                res.writeHead(200, {
+                    'Content-Type': 'text/event-stream; charset=utf-8',
+                    'Cache-Control': 'no-cache',
+                    Connection: 'keep-alive',
+                    'Access-Control-Allow-Origin': '*',
+                });
+
+                let closed = false;
+
+                const writeStatus = event => {
+                    if (closed || event.sessionId !== sessionId) return;
+                    res.write(`event: status\ndata: ${JSON.stringify(event)}\n\n`);
+                };
+
+                res.write('retry: 2000\n\n');
+                writeStatus({
+                    sessionId,
+                    status: session.status,
+                    updated_at: session.updated_at,
+                });
+
+                const unsubscribe = onStatusChange(writeStatus);
+                const heartbeat = setInterval(() => {
+                    if (!closed) res.write(': ping\n\n');
+                }, 15000);
+
+                const closeStream = () => {
+                    closed = true;
+                    clearInterval(heartbeat);
+                    unsubscribe();
+                };
+
+                req.on('close', closeStream);
+                res.on('error', closeStream);
+                return;
             }
 
             if (parts.length === 3 && parts[2] === 'goals') {

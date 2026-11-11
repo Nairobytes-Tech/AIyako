@@ -26,6 +26,7 @@ npm test
 | Command | What it does | Allowed tools |
 |---------|-------------|---------------|
 | `npm test` | Run test suite | `node --test --test-concurrency=1 "tests/**/*.test.js"` |
+| `docker compose up -d searxng` | Start local SearXNG for `web_search` | Docker |
 | `npm run server` | Start web server | Node.js v22 |
 | `npm run start` | Run CLI agent | Node.js v22 |
 
@@ -35,11 +36,12 @@ npm test
 - **Model**: Qwen3-600M Q4_0 (365MB) at `/home/lulwanda/projects/kioo-ai/models/qwen3-0.6b-q4_0.gguf`
 - **Config**: `QVAC_CONFIG_PATH=./qvac.config.json` must be set
 - **DB**: SQLite via `node:sqlite`, stored in `data/kioo.db`
+- **Search**: self-hosted SearXNG at `SEARXNG_URL` (default `http://localhost:8080`)
 
 ## Testing Policy
 
 - Tests use Node 22's built-in `node:test` (no external test framework needed)
-- Run: `npm test` (79 tests, must all pass before committing; requires Node 22)
+- Run: `npm test` (88 tests, must all pass before committing; requires Node 22)
 - Do NOT commit `data/kioo.db` (gitignored)
 - Do NOT commit model weights (gitignored)
 
@@ -53,13 +55,13 @@ npm test
 ## Architecture
 
 - `src/agent.js` — Agent loop with tool calling via QVAC SDK
-- `src/tools/` — 5 tools with Zod validation: save_note, search_notes, create_task, list_tasks, mark_task_done
+- `src/tools/` — 6 tools with Zod validation: save_note, search_notes, create_task, list_tasks, mark_task_done, web_search
 - `src/runtime/` — session manager, status events, goals, approvals, hybrid router, and `runTurn()` wrapping the agent loop
 - `src/db/database.js` — SQLite singleton for notes, tasks, sessions, messages, goals, artifacts, approvals
 - `src/ui/server.js` — HTTP server for web interface
 - `src/ui/public/` — Static frontend assets
 - `src/types/index.ts` — TypeScript type definitions
-- `tests/` — Test suite (79 tests)
+- `tests/` — Test suite (88 tests)
 
 ## Approval Gate
 

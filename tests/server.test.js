@@ -98,6 +98,44 @@ describe('HTTP server', () => {
         await fetch(`${BASE}/sessions/${session.id}`, { method: 'DELETE' });
     });
 
+    test('status stream sends the initial session status', async () => {
+        const session = await (await postJson(`${BASE}/sessions`, {})).json();
+        const controller = new AbortController();
+
+        try {
+            const res = await fetch(`${BASE}/sessions/${session.id}/events`, {
+                signal: controller.signal,
+            });
+            assert.equal(res.status, 200);
+            assert.match(res.headers.get('content-type') || '', /text\/event-stream/);
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            for (let i = 0; i < 20 && !buffer.includes('"status":"idle"'); i++) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+            }
+
+            assert.match(buffer, /event: status/);
+            assert.match(buffer, /"status":"idle"/);
+            reader.releaseLock();
+        } finally {
+            controller.abort();
+        }
+
+        await fetch(`${BASE}/sessions/${session.id}`, { method: 'DELETE' });
+    });
+
+    test('status stream rejects unknown sessions', async () => {
+        const res = await fetch(`${BASE}/sessions/missing/events`);
+        assert.equal(res.status, 404);
+        const data = await res.json();
+        assert.match(data.error, /Session not found/);
+    });
+
     test('goals can be added, listed and updated per session', async () => {
         const session = await (await postJson(`${BASE}/sessions`, {})).json();
 

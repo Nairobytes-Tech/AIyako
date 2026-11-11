@@ -4,6 +4,10 @@ const SESSION_KEY = 'kioo_session_id';
 let isOnline = navigator.onLine;
 let isProcessing = false;
 let currentSessionId = localStorage.getItem(SESSION_KEY);
+let statusSource = null;
+let libraryTab = 'notes';
+let cachedNotes = [];
+let cachedArtifacts = [];
 
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
@@ -16,6 +20,10 @@ const notesContainer = document.getElementById('notesContainer');
 const navItems = document.querySelectorAll('.nav-item');
 const views = document.querySelectorAll('.chat-view, .goals-view, .library-view, .more-view');
 const chatForm = document.getElementById('chatForm');
+const sessionSelect = document.getElementById('sessionSelect');
+const newChatBtn = document.getElementById('newChatBtn');
+const goalForm = document.getElementById('goalForm');
+const goalInput = document.getElementById('goalInput');
 
 initApp();
 
@@ -27,27 +35,18 @@ async function initApp() {
 
     initNav();
     initInput();
-    await ensureSession();
+    initSessionControls();
+    initGoals();
+    initLibraryTabs();
+    await ensureSession(currentSessionId);
 }
 
-async function ensureSession() {
-    if (currentSessionId) {
+async function ensureSession(preferredId) {
+    if (preferredId) {
         try {
-            const res = await fetch(`${API_BASE}/sessions/${currentSessionId}`);
+            const res = await fetch(`${API_BASE}/sessions/${preferredId}`);
             if (res.ok) {
-                const session = await res.json();
-                if (!session.messages || session.messages.length === 0) {
-                    showWelcome();
-                } else {
-                    renderHistory(session.messages);
-                }
-                for (const approval of session.approvals || []) {
-                    addApproval(approval);
-                }
-                if ((session.approvals || []).length > 0) {
-                    setAgentStatus('busy', 'Waiting for approval');
-                }
-                await Promise.all([fetchTasks(), fetchNotes()]);
+                await activateSession(await res.json());
                 return;
             }
         } catch {
@@ -55,12 +54,122 @@ async function ensureSession() {
         }
     }
 
-    try {
-        await createNewSession();
+    await startNewChat();
+}
+
+async function activateSession(session) {
+    currentSessionId = session.id;
+    localStorage.setItem(SESSION_KEY, currentSessionId);
+
+    messagesEl.innerHTML = '';
+    libraryTab = 'notes';
+    document.querySelectorAll('.tab-subitem').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.subtab === libraryTab);
+    });
+
+    if (session.messages && session.messages.length > 0) {
+        renderHistory(session.messages);
+    } else {
         showWelcome();
+    }
+
+    for (const approval of session.approvals || []) {
+        addApproval(approval);
+    }
+
+    applySessionStatus(session.status || 'idle');
+    if ((session.approvals || []).length > 0) {
+        setAgentStatus('busy', 'Waiting for approval');
+    }
+
+    await refreshSessionList();
+    subscribeToStatus();
+    await Promise.all([fetchTasks(), fetchNotes()]);
+}
+
+async function startNewChat() {
+    try {
+        const session = await createNewSession();
+        await activateSession({
+            messages: [],
+            approvals: [],
+            artifacts: [],
+            goals: [],
+            ...session,
+        });
     } catch (err) {
         addMessage(`Could not start a session: ${err.message}`, 'assistant', 'error');
     }
+}
+
+async function switchSession(sessionId) {
+    if (!sessionId || sessionId === currentSessionId) return;
+    if (isProcessing) {
+        sessionSelect.value = currentSessionId;
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/sessions/${sessionId}`);
+        if (!res.ok) throw new Error('Session not found');
+        await activateSession(await res.json());
+    } catch (err) {
+        addMessage(`Could not load session: ${err.message}`, 'assistant', 'error');
+        await refreshSessionList();
+    }
+}
+
+async function refreshSessionList() {
+    try {
+        const res = await fetch(`${API_BASE}/sessions`);
+        if (!res.ok) return;
+        const data = await res.json();
+        sessionSelect.innerHTML = '';
+
+        for (const session of data.sessions || []) {
+            const option = document.createElement('option');
+            option.value = session.id;
+            option.textContent = session.title || `Chat ${session.id.slice(0, 8)}`;
+            sessionSelect.appendChild(option);
+        }
+
+        if (currentSessionId) sessionSelect.value = currentSessionId;
+    } catch {
+        // keep the existing list if the server is unreachable
+    }
+}
+
+function applySessionStatus(status, tool = null) {
+    if (status === 'thinking') {
+        setAgentStatus('busy', 'Working...');
+    } else if (status === 'tool') {
+        setAgentStatus('busy', tool === 'web_search' ? 'Searching the web...' : 'Calling tool...');
+    } else if (status === 'waiting_approval') {
+        setAgentStatus('busy', 'Waiting for approval');
+    } else {
+        setAgentStatus('idle', 'Idle');
+    }
+}
+
+function subscribeToStatus() {
+    if (statusSource) {
+        statusSource.close();
+        statusSource = null;
+    }
+    if (!currentSessionId) return;
+
+    statusSource = new EventSource(`${API_BASE}/sessions/${currentSessionId}/events`);
+    statusSource.addEventListener('status', event => {
+        try {
+            const data = JSON.parse(event.data);
+            applySessionStatus(data.status, data.tool);
+        } catch {
+            // ignore malformed events
+        }
+    });
+    statusSource.addEventListener('error', () => {
+        if (!navigator.onLine) setAgentStatus('idle', 'Offline');
+    });
 }
 
 async function createNewSession() {
@@ -107,6 +216,52 @@ function initNav() {
             document.getElementById(`${item.dataset.tab}View`).classList.add('active');
             if (item.dataset.tab === 'goals') fetchTasks();
             if (item.dataset.tab === 'library') fetchNotes();
+        });
+    });
+}
+
+function initSessionControls() {
+    sessionSelect.addEventListener('change', () => switchSession(sessionSelect.value));
+    newChatBtn.addEventListener('click', () => {
+        if (isProcessing) return;
+        startNewChat();
+    });
+}
+
+function initGoals() {
+    goalForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const title = goalInput.value.trim();
+        if (!title || !currentSessionId) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/sessions/${currentSessionId}/goals`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Could not add goal');
+            }
+
+            goalInput.value = '';
+            await fetchTasks();
+        } catch (err) {
+            addMessage(`Goal error: ${err.message}`, 'assistant', 'error');
+        }
+    });
+}
+
+function initLibraryTabs() {
+    document.querySelectorAll('.tab-subitem').forEach(tab => {
+        tab.addEventListener('click', () => {
+            libraryTab = tab.dataset.subtab;
+            document.querySelectorAll('.tab-subitem').forEach(item => {
+                item.classList.toggle('active', item === tab);
+            });
+            renderLibrary();
         });
     });
 }
@@ -223,11 +378,7 @@ async function handleSubmit() {
             addMessage(`Error: ${data.error}`, 'assistant', 'error');
         }
 
-        if (data.status === 'waiting_approval') {
-            setAgentStatus('busy', 'Waiting for approval');
-        } else {
-            setAgentStatus('ready', 'Ready');
-        }
+        applySessionStatus(data.status);
 
         await Promise.all([fetchTasks(), fetchNotes()]);
     } catch (err) {
@@ -392,11 +543,7 @@ async function resolveApprovalPrompt(approvalId, decision, el) {
         if (data.reply) addMessage(data.reply, 'assistant');
         if (data.error) addMessage(`Error: ${data.error}`, 'assistant', 'error');
 
-        if (data.status === 'waiting_approval') {
-            setAgentStatus('busy', 'Waiting for approval');
-        } else {
-            setAgentStatus('ready', 'Ready');
-        }
+        applySessionStatus(data.status);
 
         await Promise.all([fetchTasks(), fetchNotes()]);
     } catch (err) {
@@ -414,6 +561,13 @@ function escapeHtml(text) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+}
+
+function formatTimestamp(value) {
+    if (!value) return '';
+    const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 function scrollToBottom() {
@@ -447,10 +601,17 @@ async function fetchTasks() {
 
         if (goals.length) {
             html += '<h3 class="list-heading">Session goals</h3>';
-            html += `<ul class="item-list">${goals.map(g => `
-                <li class="${g.status === 'done' ? 'completed' : ''}">
-                    ${escapeHtml(g.title)}
-                    <div class="meta">${escapeHtml(g.status)}${g.progress ? ` • ${escapeHtml(g.progress)}` : ''}</div>
+            html += `<ul class="item-list">${goals.map(goal => `
+                <li data-goal-id="${goal.id}">
+                    ${escapeHtml(goal.title)}
+                    <div class="goal-controls">
+                        <select class="goal-status" data-goal-id="${goal.id}" aria-label="Goal status">
+                            <option value="active"${goal.status === 'active' ? ' selected' : ''}>Active</option>
+                            <option value="done"${goal.status === 'done' ? ' selected' : ''}>Done</option>
+                            <option value="paused"${goal.status === 'paused' ? ' selected' : ''}>Paused</option>
+                        </select>
+                        <input class="goal-progress" data-goal-id="${goal.id}" value="${escapeHtml(goal.progress || '')}" placeholder="Progress" aria-label="Goal progress">
+                    </div>
                 </li>
             `).join('')}</ul>`;
         }
@@ -466,14 +627,54 @@ async function fetchTasks() {
         }
 
         tasksContainer.innerHTML = html;
+
+        tasksContainer.querySelectorAll('.goal-status').forEach(select => {
+            select.addEventListener('change', () => {
+                updateGoalField(select.dataset.goalId, { status: select.value });
+            });
+        });
+
+        tasksContainer.querySelectorAll('.goal-progress').forEach(input => {
+            const commit = () => {
+                updateGoalField(input.dataset.goalId, { progress: input.value.trim() || null });
+            };
+            input.addEventListener('change', commit);
+            input.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    input.blur();
+                }
+            });
+        });
     } catch (err) {
         tasksContainer.innerHTML = '<div class="error-message">Failed to load goals</div>';
     }
 }
 
+async function updateGoalField(goalId, fields) {
+    try {
+        const res = await fetch(`${API_BASE}/goals/${goalId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fields),
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Could not update goal');
+        }
+
+        await fetchTasks();
+    } catch (err) {
+        addMessage(`Goal update failed: ${err.message}`, 'assistant', 'error');
+    }
+}
+
 async function fetchNotes() {
     if (!currentSessionId) {
-        notesContainer.innerHTML = '<div class="empty-state">No notes yet</div>';
+        cachedNotes = [];
+        cachedArtifacts = [];
+        renderLibrary();
         return;
     }
 
@@ -484,42 +685,45 @@ async function fetchNotes() {
         ]);
         const notesData = await notesRes.json();
         const sessionData = sessionRes.ok ? await sessionRes.json() : { artifacts: [] };
-        const notes = notesData.notes || [];
-        const artifacts = sessionData.artifacts || [];
+        cachedNotes = notesData.notes || [];
+        cachedArtifacts = sessionData.artifacts || [];
+        renderLibrary();
+    } catch (err) {
+        notesContainer.innerHTML = '<div class="error-message">Failed to load library</div>';
+    }
+}
 
-        if (!notes.length && !artifacts.length) {
-            notesContainer.innerHTML = '<div class="empty-state">No notes yet</div>';
+function renderLibrary() {
+    if (libraryTab === 'artifacts') {
+        if (!cachedArtifacts.length) {
+            notesContainer.innerHTML = '<div class="empty-state">No artifacts yet</div>';
             return;
         }
-
-        let html = '';
-
-        if (artifacts.length) {
-            html += '<h3 class="list-heading">Artifacts</h3>';
-            html += `<ul class="item-list">${artifacts.map(a => `
-                <li>${escapeHtml(a.title || a.type)}
-                    <div class="meta">${escapeHtml(a.type)} • ${new Date(a.created_at).toLocaleString()}</div>
-                </li>
-            `).join('')}</ul>`;
-        }
-
-        if (notes.length) {
-            html += '<h3 class="list-heading">Notes</h3>';
-            html += `<ul class="item-list">${notes.map(n => `
-                <li>${escapeHtml(n.content)}
-                    <div class="meta">${new Date(n.created_at + 'T00:00:00').toLocaleString()}</div>
-                </li>
-            `).join('')}</ul>`;
-        }
-
-        notesContainer.innerHTML = html;
-    } catch (err) {
-        notesContainer.innerHTML = '<div class="error-message">Failed to load notes</div>';
+        notesContainer.innerHTML = `<ul class="item-list">${cachedArtifacts.map(artifact => `
+            <li>${escapeHtml(artifact.title || artifact.type)}
+                <div class="meta">${escapeHtml(artifact.type)} • ${formatTimestamp(artifact.created_at)}</div>
+            </li>
+        `).join('')}</ul>`;
+        return;
     }
+
+    if (!cachedNotes.length) {
+        notesContainer.innerHTML = '<div class="empty-state">No notes yet</div>';
+        return;
+    }
+    notesContainer.innerHTML = `<ul class="item-list">${cachedNotes.map(note => `
+        <li>${escapeHtml(note.content)}
+            <div class="meta">${formatTimestamp(note.created_at)}</div>
+        </li>
+    `).join('')}</ul>`;
 }
 
 window.addEventListener('online', () => {
     isOnline = true;
+});
+
+window.addEventListener('beforeunload', () => {
+    if (statusSource) statusSource.close();
 });
 
 window.addEventListener('offline', () => {

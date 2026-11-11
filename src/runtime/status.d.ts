@@ -12,6 +12,7 @@ export declare const STATUSES: SessionStatusValue[];
 export interface StatusEvent {
     sessionId: string;
     status: SessionStatusValue;
+    tool?: string;
     updated_at: string;
 }
 
