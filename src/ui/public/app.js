@@ -1,7 +1,9 @@
 const API_BASE = '';
+const SESSION_KEY = 'kioo_session_id';
 
 let isOnline = navigator.onLine;
 let isProcessing = false;
+let currentSessionId = localStorage.getItem(SESSION_KEY);
 
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
@@ -17,7 +19,7 @@ const chatForm = document.getElementById('chatForm');
 
 initApp();
 
-function initApp() {
+async function initApp() {
     statusText.textContent = 'Idle';
     statusDot.className = 'status-dot idle';
     sendBtn.disabled = true;
@@ -25,7 +27,75 @@ function initApp() {
 
     initNav();
     initInput();
-    showWelcome();
+    await ensureSession();
+}
+
+async function ensureSession() {
+    if (currentSessionId) {
+        try {
+            const res = await fetch(`${API_BASE}/sessions/${currentSessionId}`);
+            if (res.ok) {
+                const session = await res.json();
+                if (!session.messages || session.messages.length === 0) {
+                    showWelcome();
+                } else {
+                    renderHistory(session.messages);
+                }
+                for (const approval of session.approvals || []) {
+                    addApproval(approval);
+                }
+                if ((session.approvals || []).length > 0) {
+                    setAgentStatus('busy', 'Waiting for approval');
+                }
+                await Promise.all([fetchTasks(), fetchNotes()]);
+                return;
+            }
+        } catch {
+            // fall through to creating a new session
+        }
+    }
+
+    try {
+        await createNewSession();
+        showWelcome();
+    } catch (err) {
+        addMessage(`Could not start a session: ${err.message}`, 'assistant', 'error');
+    }
+}
+
+async function createNewSession() {
+    const res = await fetch(`${API_BASE}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+    });
+
+    if (!res.ok) {
+        throw new Error('Session creation failed');
+    }
+
+    const session = await res.json();
+    currentSessionId = session.id;
+    localStorage.setItem(SESSION_KEY, currentSessionId);
+    return session;
+}
+
+function renderHistory(messages) {
+    for (const message of messages) {
+        if (message.role === 'user') {
+            addMessage(message.content, 'user');
+        } else if (message.role === 'assistant') {
+            if (!message.content || message.content === '[tool_calls]') continue;
+            addMessage(message.content, 'assistant');
+        } else if (message.role === 'tool') {
+            try {
+                addToolResult(JSON.parse(message.content));
+            } catch {
+                // ignore malformed tool payloads
+            }
+        }
+    }
+    scrollToBottom();
 }
 
 function initNav() {
@@ -102,11 +172,24 @@ async function handleSubmit() {
     try {
         setAgentStatus('busy', 'Working...');
 
-        const res = await fetch(`${API_BASE}/chat`, {
+        if (!currentSessionId) {
+            await createNewSession();
+        }
+
+        let res = await fetch(`${API_BASE}/sessions/${currentSessionId}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: text }),
         });
+
+        if (res.status === 404) {
+            await createNewSession();
+            res = await fetch(`${API_BASE}/sessions/${currentSessionId}/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text }),
+            });
+        }
 
         if (!res.ok) {
             const err = await res.json();
@@ -128,11 +211,23 @@ async function handleSubmit() {
             addToolResult(tr);
         }
 
+        for (const approval of data.approvals || []) {
+            addApproval(approval);
+        }
+
         if (data.reply) {
             addMessage(data.reply, 'assistant');
         }
 
-        setAgentStatus('ready', 'Ready');
+        if (data.error) {
+            addMessage(`Error: ${data.error}`, 'assistant', 'error');
+        }
+
+        if (data.status === 'waiting_approval') {
+            setAgentStatus('busy', 'Waiting for approval');
+        } else {
+            setAgentStatus('ready', 'Ready');
+        }
 
         await Promise.all([fetchTasks(), fetchNotes()]);
     } catch (err) {
@@ -245,6 +340,72 @@ function addToolResult(result) {
     scrollToBottom();
 }
 
+function addApproval(approval) {
+    const div = document.createElement('div');
+    div.className = 'tool-call approval';
+    div.dataset.approvalId = approval.id;
+    div.innerHTML = `
+        <span class="tool-name">Approval needed</span>
+        <code style="color:#64748b">${escapeHtml(approval.tool_name)}(${escapeHtml(JSON.stringify(approval.tool_args || {}))})</code>
+        <div class="approval-actions">
+            <button type="button" class="approval-btn approve">Approve</button>
+            <button type="button" class="approval-btn reject">Reject</button>
+        </div>
+    `;
+
+    div.querySelector('.approve').addEventListener('click', () => {
+        resolveApprovalPrompt(approval.id, 'approve', div);
+    });
+    div.querySelector('.reject').addEventListener('click', () => {
+        resolveApprovalPrompt(approval.id, 'reject', div);
+    });
+
+    messagesEl.appendChild(div);
+    scrollToBottom();
+}
+
+async function resolveApprovalPrompt(approvalId, decision, el) {
+    if (!currentSessionId) return;
+
+    el.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    setAgentStatus('busy', decision === 'approve' ? 'Approving...' : 'Rejecting...');
+
+    try {
+        const res = await fetch(`${API_BASE}/sessions/${currentSessionId}/approvals/${approvalId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decision }),
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Approval failed');
+        }
+
+        const data = await res.json();
+        el.remove();
+
+        for (const tc of data.toolCalls || []) addToolCall(tc.name, tc.arguments);
+        for (const tr of data.toolResults || []) addToolResult(tr);
+        for (const approval of data.approvals || []) addApproval(approval);
+
+        if (data.reply) addMessage(data.reply, 'assistant');
+        if (data.error) addMessage(`Error: ${data.error}`, 'assistant', 'error');
+
+        if (data.status === 'waiting_approval') {
+            setAgentStatus('busy', 'Waiting for approval');
+        } else {
+            setAgentStatus('ready', 'Ready');
+        }
+
+        await Promise.all([fetchTasks(), fetchNotes()]);
+    } catch (err) {
+        el.querySelectorAll('button').forEach(button => { button.disabled = false; });
+        addMessage(`Approval error: ${err.message}`, 'assistant', 'error');
+        setAgentStatus('idle', 'Error');
+    }
+}
+
 function escapeHtml(text) {
     if (text === null || text === undefined) return '';
     return text
@@ -262,49 +423,96 @@ function scrollToBottom() {
 }
 
 async function fetchTasks() {
-    try {
-        const res = await fetch(`${API_BASE}/tasks`);
-        const data = await res.json();
+    if (!currentSessionId) {
+        tasksContainer.innerHTML = '<div class="empty-state">No goals yet</div>';
+        return;
+    }
 
-        if (!data.tasks || !data.tasks.length) {
+    try {
+        const [tasksRes, goalsRes] = await Promise.all([
+            fetch(`${API_BASE}/tasks`),
+            fetch(`${API_BASE}/sessions/${currentSessionId}/goals`),
+        ]);
+        const tasksData = await tasksRes.json();
+        const goalsData = goalsRes.ok ? await goalsRes.json() : { goals: [] };
+        const tasks = tasksData.tasks || [];
+        const goals = goalsData.goals || [];
+
+        if (!tasks.length && !goals.length) {
             tasksContainer.innerHTML = '<div class="empty-state">No goals yet</div>';
             return;
         }
 
-        const ul = document.createElement('ul');
-        ul.className = 'item-list';
-        ul.innerHTML = data.tasks.map(t => `
-            <li class="${t.completed ? 'completed' : ''}">
-                ${escapeHtml(t.title)}
-                <div class="meta">ID: ${t.id}${t.due_date ? ` • Due: ${escapeHtml(t.due_date)}` : ''}</div>
-            </li>
-        `).join('');
-        tasksContainer.innerHTML = '';
-        tasksContainer.appendChild(ul);
+        let html = '';
+
+        if (goals.length) {
+            html += '<h3 class="list-heading">Session goals</h3>';
+            html += `<ul class="item-list">${goals.map(g => `
+                <li class="${g.status === 'done' ? 'completed' : ''}">
+                    ${escapeHtml(g.title)}
+                    <div class="meta">${escapeHtml(g.status)}${g.progress ? ` • ${escapeHtml(g.progress)}` : ''}</div>
+                </li>
+            `).join('')}</ul>`;
+        }
+
+        if (tasks.length) {
+            html += '<h3 class="list-heading">Tasks</h3>';
+            html += `<ul class="item-list">${tasks.map(t => `
+                <li class="${t.completed ? 'completed' : ''}">
+                    ${escapeHtml(t.title)}
+                    <div class="meta">ID: ${t.id}${t.due_date ? ` • Due: ${escapeHtml(t.due_date)}` : ''}</div>
+                </li>
+            `).join('')}</ul>`;
+        }
+
+        tasksContainer.innerHTML = html;
     } catch (err) {
         tasksContainer.innerHTML = '<div class="error-message">Failed to load goals</div>';
     }
 }
 
 async function fetchNotes() {
-    try {
-        const res = await fetch(`${API_BASE}/notes`);
-        const data = await res.json();
+    if (!currentSessionId) {
+        notesContainer.innerHTML = '<div class="empty-state">No notes yet</div>';
+        return;
+    }
 
-        if (!data.notes || !data.notes.length) {
+    try {
+        const [notesRes, sessionRes] = await Promise.all([
+            fetch(`${API_BASE}/notes`),
+            fetch(`${API_BASE}/sessions/${currentSessionId}`),
+        ]);
+        const notesData = await notesRes.json();
+        const sessionData = sessionRes.ok ? await sessionRes.json() : { artifacts: [] };
+        const notes = notesData.notes || [];
+        const artifacts = sessionData.artifacts || [];
+
+        if (!notes.length && !artifacts.length) {
             notesContainer.innerHTML = '<div class="empty-state">No notes yet</div>';
             return;
         }
 
-        const ul = document.createElement('ul');
-        ul.className = 'item-list';
-        ul.innerHTML = data.notes.map(n => `
-            <li>${escapeHtml(n.content)}
-                <div class="meta">${new Date(n.created_at + 'T00:00:00').toLocaleString()}</div>
-            </li>
-        `).join('');
-        notesContainer.innerHTML = '';
-        notesContainer.appendChild(ul);
+        let html = '';
+
+        if (artifacts.length) {
+            html += '<h3 class="list-heading">Artifacts</h3>';
+            html += `<ul class="item-list">${artifacts.map(a => `
+                <li>${escapeHtml(a.title || a.type)}
+                    <div class="meta">${escapeHtml(a.type)} • ${new Date(a.created_at).toLocaleString()}</div>
+                </li>
+            `).join('')}</ul>`;
+        }
+
+        if (notes.length) {
+            html += '<h3 class="list-heading">Notes</h3>';
+            html += `<ul class="item-list">${notes.map(n => `
+                <li>${escapeHtml(n.content)}
+                    <div class="meta">${new Date(n.created_at + 'T00:00:00').toLocaleString()}</div>
+                </li>
+            `).join('')}</ul>`;
+        }
+
+        notesContainer.innerHTML = html;
     } catch (err) {
         notesContainer.innerHTML = '<div class="error-message">Failed to load notes</div>';
     }
