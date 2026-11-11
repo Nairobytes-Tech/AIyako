@@ -25,7 +25,7 @@ npm test
 
 | Command | What it does | Allowed tools |
 |---------|-------------|---------------|
-| `npm test` | Run test suite | `node --test tests/` |
+| `npm test` | Run test suite | `node --test --test-concurrency=1 "tests/**/*.test.js"` |
 | `npm run server` | Start web server | Node.js v22 |
 | `npm run start` | Run CLI agent | Node.js v22 |
 
@@ -39,7 +39,7 @@ npm test
 ## Testing Policy
 
 - Tests use Node 22's built-in `node:test` (no external test framework needed)
-- Run: `npm test` (39 tests, must all pass before committing)
+- Run: `npm test` (79 tests, must all pass before committing; requires Node 22)
 - Do NOT commit `data/kioo.db` (gitignored)
 - Do NOT commit model weights (gitignored)
 
@@ -54,8 +54,13 @@ npm test
 
 - `src/agent.js` — Agent loop with tool calling via QVAC SDK
 - `src/tools/` — 5 tools with Zod validation: save_note, search_notes, create_task, list_tasks, mark_task_done
-- `src/db/database.js` — SQLite singleton for notes and tasks
+- `src/runtime/` — session manager, status events, goals, approvals, hybrid router, and `runTurn()` wrapping the agent loop
+- `src/db/database.js` — SQLite singleton for notes, tasks, sessions, messages, goals, artifacts, approvals
 - `src/ui/server.js` — HTTP server for web interface
 - `src/ui/public/` — Static frontend assets
 - `src/types/index.ts` — TypeScript type definitions
-- `tests/` — Test suite (39 tests)
+- `tests/` — Test suite (79 tests)
+
+## Approval Gate
+
+Set `KIOO_APPROVAL_TOOLS` to a comma-separated list of tool names (e.g. `save_note,create_task`) to require user approval before those tools execute. Pending approvals are exposed via `/sessions/:id` and `GET /sessions/:id/approvals`, and resolved with `POST /sessions/:id/approvals/:approvalId`. The agent resumes after resolution and short-circuits duplicate tool calls to avoid repeated side effects.

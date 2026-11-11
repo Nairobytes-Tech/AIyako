@@ -12,6 +12,10 @@ Kioo AI gives you a private, offline AI assistant that can answer questions, man
 - **Local inference** — Runs on-device via QVAC SDK (llama.cpp)
 - **Note management** — Save and search notes with natural language
 - **Task tracking** — Create, list, and complete tasks
+- **Persistent sessions** — Conversation history survives restarts, scoped per session
+- **Goals & artifacts** — Task-driven goals are extracted from tool results
+- **Approval gate** — Require explicit approval before sensitive tools run
+- **Hybrid routing** — Escalates complex turns to an optional larger local model
 - **Web UI** — Responsive browser interface for laptop browsers
 - **CLI mode** — Direct terminal access to the agent
 - **Type-safe tools** — Zod schema validation on all tool inputs
@@ -85,6 +89,38 @@ QVAC_CONFIG_PATH=./qvac.config.json npm run server
 
 Then open http://localhost:3000 in your browser.
 
+The web UI keeps a session ID in `localStorage` and sends each turn to
+`POST /sessions/:id/chat`. Sessions, messages, goals, and artifacts are persisted
+in SQLite, so reloading the page restores the conversation.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QVAC_CONFIG_PATH` | — | Path to QVAC config (`./qvac.config.json`) |
+| `QVAC_MODEL_PATH` | Qwen3-600M | Local GGUF for the primary model |
+| `KIOO_ESCALATION_MODEL_PATH` | unset | Optional larger local GGUF for complex turns |
+| `KIOO_APPROVAL_TOOLS` | unset | Comma-separated tools requiring approval |
+| `KIOO_SKIP_MODEL` | unset | Set to `1` to run the server without loading a model |
+| `PORT` / `HOST` | `3000` / `localhost` | HTTP server binding |
+
+### Runtime API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Server + model status |
+| `POST` | `/sessions` | Create a session |
+| `GET` | `/sessions` | List sessions |
+| `GET` | `/sessions/:id` | Session with messages, goals, artifacts |
+| `DELETE` | `/sessions/:id` | Delete a session and its data |
+| `POST` | `/sessions/:id/chat` | Run a turn in a session |
+| `GET`/`POST` | `/sessions/:id/goals` | List or create goals |
+| `PATCH` | `/goals/:id` | Update a goal |
+| `GET` | `/sessions/:id/approvals` | List approvals for a session |
+| `POST` | `/sessions/:id/approvals/:approvalId` | Approve or reject a pending tool call |
+| `GET` | `/notes`, `/tasks` | List notes and tasks |
+| `POST` | `/chat` | Legacy single-turn endpoint (auto-creates a session) |
+
 ### Running tests
 
 ```bash
@@ -94,7 +130,8 @@ npm test
 ## Architecture
 
 - **QVAC SDK** — Local LLM inference engine (llama.cpp backend)
-- **SQLite** (`node:sqlite`, built into Node 22) — Local persistence for notes and tasks
+- **SQLite** (`node:sqlite`, built into Node 22) — Local persistence for notes, tasks, sessions, messages, goals, and artifacts
+- **Runtime Layer** — Owns session lifecycle, message history, status events, goals, approvals, and hybrid routing; `runTurn()` wraps the QVAC tool loop
 - **Agent Tools** — `save_note`, `search_notes`, `create_task`, `list_tasks`, `mark_task_done`
 - **Web Server** — Built-in HTTP server with static file serving + API endpoints
 - **Offline-first** — All data and compute stays on-device
@@ -106,11 +143,12 @@ npm test
 | `src/agent.js` | Agent orchestration with tool calling loop |
 | `src/tools/` | Tool implementations with Zod validation |
 | `src/tools/index.js` | Tool registry and dispatcher |
+| `src/runtime/` | Session manager, status events, goals, approvals, router, and multi-turn runner |
 | `src/db/database.js` | SQLite database layer (singleton pattern) |
 | `src/ui/server.js` | HTTP server for web interface |
 | `src/ui/public/` | Static frontend assets (HTML, CSS, JS) |
 | `src/types/index.ts` | TypeScript type definitions |
-| `tests/` | Test suite (39 tests) |
+| `tests/` | Test suite (79 tests) |
 
 ## Available Tools
 
@@ -133,8 +171,8 @@ npm test
 ## Test Results
 
 ```
-# tests 39
-# pass 39
+# tests 79
+# pass 79
 # fail 0
 ```
 
@@ -167,7 +205,7 @@ Test coverage includes:
 
 - **Multi-step planning**: Qwen3-600M may not reliably chain multiple tool calls in a single turn (e.g., "list tasks and mark #1 done"). Workarounds: use explicit tool calls in the UI.
 - **Tool use reliability**: ~80% of requests result in correct tool invocation. When tools fail, the agent falls back to a generic response.
-- **No session persistence**: Each chat request is independent — there's no server-side conversation history between requests.
+- **Duplicated tool calls**: The small model occasionally repeats an identical tool call. The agent short-circuits repeats to prevent duplicate side effects, but you may see a "already completed" reply.
 - **GPU only**: Tested on GPU; CPU-only fallback not verified.
 
 ## License
