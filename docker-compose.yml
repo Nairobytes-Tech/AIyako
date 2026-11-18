@@ -20,3 +20,18 @@ services:
       - MODEL_NAME=${MODEL_NAME:-Qwen3.5-9B}
       - FALLBACK_MODEL=${FALLBACK_MODEL:-Qwen3.5-4B}
     restart: unless-stopped
+
+  kioo:
+    build: .
+    container_name: kioo-app
+    ports:
+      - "3000:3000"
+    environment:
+      - QVAC_CONFIG_PATH=/app/qvac.config.json
+      - PORT=3000
+      - HOST=0.0.0.0
+      - SEARXNG_URL=http://searxng:8080
+    depends_on:
+      - searxng
+      - deep-agents
+    restart: unless-stopped
