@@ -9,3 +9,14 @@ services:
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080/
     restart: unless-stopped
+
+  deep-agents:
+    build: ./services/deep-agents
+    container_name: kioo-deep-agents
+    ports:
+      - "8001:8001"
+    environment:
+      - MODEL_BASE_URL=${MODEL_BASE_URL:-http://host.docker.internal:8000/v1}
+      - MODEL_NAME=${MODEL_NAME:-Qwen3.5-9B}
+      - FALLBACK_MODEL=${FALLBACK_MODEL:-Qwen3.5-4B}
+    restart: unless-stopped
