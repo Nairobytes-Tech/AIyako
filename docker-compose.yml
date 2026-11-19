@@ -34,6 +34,7 @@ services:
       - ./data:/app/data
     environment:
       - QVAC_CONFIG_PATH=/app/qvac.config.json
+      - QVAC_MODEL_PATH=/app/models/qwen3-0.6b-q4_0.gguf
       - PORT=3000
       - HOST=0.0.0.0
       - SEARXNG_URL=http://searxng:8080
