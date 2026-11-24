@@ -2,9 +2,12 @@ import { loadModel, completion, unloadModel } from '@qvac/sdk';
 import { toolDefinitions, executeTool } from './tools/index.js';
 import { formatHistoryForModel } from './tools/format.js';
 import { closeDb } from './db/database.js';
+import { buildSystemPrompt } from './systemPrompt.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const DEFAULT_MODEL_PATH = '/home/lulwanda/projects/kioo-ai/models/qwen3-0.6b-q4_0.gguf';
-const MODEL_PATH = process.env.QVAC_MODEL_PATH || DEFAULT_MODEL_PATH;
+const DEFAULT_MODEL_PATH = fileURLToPath(new URL('../models/Qwen3.5-4B-Q4_K_M.gguf', import.meta.url));
+const MODEL_PATH = path.resolve(process.env.QVAC_MODEL_PATH || DEFAULT_MODEL_PATH);
 
 if (MODEL_PATH.startsWith('http') || MODEL_PATH.startsWith('https')) {
     throw new Error(
@@ -13,25 +16,7 @@ if (MODEL_PATH.startsWith('http') || MODEL_PATH.startsWith('https')) {
     );
 }
 
-export const SYSTEM_PROMPT = `You are Kioo, a local AI assistant that runs on the user's device. Your job is to help users manage their notes and tasks using the available tools.
-
-Available tools:
-- save_note: Save information for future reference
-- search_notes: Find previously saved notes
-- create_task: Create a task with optional due date
-- list_tasks: List all tasks, optionally filtered by completion
-- mark_task_done: Mark a task as completed
-- web_search: Search the web for current information using a local SearXNG instance
-
-When you need current or time-sensitive information that is not in local notes, use web_search.
-
-After a tool returns results, treat that data as your source of truth:
-- Summarize the most relevant findings instead of dumping raw data.
-- Cite the URLs you used.
-- If the requested name or topic appears in result titles or snippets, treat it as a potential match and explain what you found.
-- Do not claim there are no matches when the results contain relevant terms.
-- If results are weak or partial, say what was found and what is missing. Never invent facts.
-- Always check the tool result to confirm the action was successful before telling the user it was done.`;
+export const SYSTEM_PROMPT = buildSystemPrompt(toolDefinitions);
 
 function stableStringify(value) {
     if (value === null || typeof value !== 'object') {
@@ -90,7 +75,7 @@ export async function createCompletion(modelId, history, options = {}) {
             stream: true,
             captureThinking: true,
             tools: toolDefinitions,
-            generationParams: { temp: 0.2, predict: 512 },
+            generationParams: { temp: 0.2, predict: 1024 },
         });
 
         let assistantContent = '';
