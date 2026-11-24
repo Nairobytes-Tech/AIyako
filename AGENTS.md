@@ -27,13 +27,14 @@ npm test
 |---------|-------------|---------------|
 | `npm test` | Run test suite | `node --test --test-concurrency=1 "tests/**/*.test.js"` |
 | `docker compose up -d searxng` | Start local SearXNG for `web_search` | Docker |
+| `docker compose up -d` | Start model server, Deep Agents, MCP Gateway, SearXNG, and UI | Docker |
 | `npm run server` | Start web server | Node.js v22 |
 | `npm run start` | Run CLI agent | Node.js v22 |
 
 ## Environment
 
 - **Node**: v22.23.4 (required for `node:sqlite`)
-- **Model**: Qwen3-600M Q4_0 (365MB) at `/home/lulwanda/projects/kioo-ai/models/qwen3-0.6b-q4_0.gguf`
+- **Models**: primary `models/Qwen3.5-4B-Q4_K_M.gguf` (2.74GB), fallback `models/qwen3-0.6b-q4_0.gguf` (365MB); both resolved to absolute paths at runtime
 - **Config**: `QVAC_CONFIG_PATH=./qvac.config.json` must be set
 - **DB**: SQLite via `node:sqlite`, stored in `data/kioo.db`
 - **Search**: self-hosted SearXNG at `SEARXNG_URL` (default `http://localhost:8080`)
@@ -41,7 +42,7 @@ npm test
 ## Testing Policy
 
 - Tests use Node 22's built-in `node:test` (no external test framework needed)
-- Run: `npm test` (94 tests, must all pass before committing; requires Node 22)
+- Run: `npm test` (100 tests, must all pass before committing; requires Node 22)
 - Do NOT commit `data/kioo.db` (gitignored)
 - Do NOT commit model weights (gitignored)
 
@@ -54,14 +55,19 @@ npm test
 
 ## Architecture
 
+- `prompts/kioo-system.txt` — Shared system prompt for Node, model server, and Deep Agents
+- `src/systemPrompt.js` — Loads the shared prompt and appends the live tool list
 - `src/agent.js` — Agent loop with tool calling via QVAC SDK
-- `src/tools/` — 6 tools with Zod validation: save_note, search_notes, create_task, list_tasks, mark_task_done, web_search
+- `src/tools/` — 6 local tools with Zod validation; Python registry adds research/work/system/execution families and MCP tools
 - `src/runtime/` — session manager, status events, goals, approvals, hybrid router, and `runTurn()` wrapping the agent loop
+- `services/model-server/` — OpenAI-compatible endpoint over QVAC with optional fallback model
+- `services/deep-agents/` — Python FastAPI agent: LangGraph/checkpointer with fallback loop, tool registry, sandbox, approvals, streaming
+- `services/mcp-gateway/` — Connector registry, auth/scope checks, audit log, dynamic tool discovery
 - `src/db/database.js` — SQLite singleton for notes, tasks, sessions, messages, goals, artifacts, approvals
 - `src/ui/server.js` — HTTP server for web interface
 - `src/ui/public/` — Static frontend assets
 - `src/types/index.ts` — TypeScript type definitions
-- `tests/` — Test suite (94 tests)
+- `tests/` — Test suite (100 tests)
 
 ## Approval Gate
 

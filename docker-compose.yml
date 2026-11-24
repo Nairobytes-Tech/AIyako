@@ -1,4 +1,22 @@
 services:
+  model-server:
+    build:
+      context: .
+      dockerfile: services/model-server/Dockerfile
+    container_name: kioo-model-server
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - PORT=8000
+      - MODEL_PATH=${MODEL_PATH:-/models/Qwen3.5-4B-Q4_K_M.gguf}
+      - MODEL_NAME=${MODEL_NAME:-qwen3.5-4b-local}
+      - FALLBACK_MODEL_PATH=${FALLBACK_MODEL_PATH:-/models/qwen3-0.6b-q4_0.gguf}
+      - FALLBACK_MODEL=${FALLBACK_MODEL:-qwen3-0.6b-local}
+      - QVAC_CONFIG_PATH=/app/qvac.config.json
+    volumes:
+      - ${MODEL_DIR:-./models}:/models:ro
+    restart: unless-stopped
+
   searxng:
     image: searxng/searxng:latest
     container_name: kioo-searxng
@@ -10,15 +28,41 @@ services:
       - SEARXNG_BASE_URL=http://localhost:8080/
     restart: unless-stopped
 
+  mcp-gateway:
+    build: ./services/mcp-gateway
+    container_name: kioo-mcp-gateway
+    ports:
+      - "8002:8002"
+    environment:
+      - MCP_GATEWAY_DB=/app/data/mcp.db
+      - MCP_GATEWAY_SECRET=${MCP_GATEWAY_SECRET:-kioo-dev-secret}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
   deep-agents:
-    build: ./services/deep-agents
+    build:
+      context: .
+      dockerfile: services/deep-agents/Dockerfile
     container_name: kioo-deep-agents
     ports:
       - "8001:8001"
     environment:
-      - MODEL_BASE_URL=${MODEL_BASE_URL:-http://host.docker.internal:8000/v1}
-      - MODEL_NAME=${MODEL_NAME:-Qwen3.5-9B}
-      - FALLBACK_MODEL=${FALLBACK_MODEL:-Qwen3.5-4B}
+      - MODEL_BASE_URL=${MODEL_BASE_URL:-http://model-server:8000/v1}
+      - MODEL_NAME=${MODEL_NAME:-qwen3.5-4b-local}
+      - FALLBACK_MODEL=${FALLBACK_MODEL:-qwen3-0.6b-local}
+      - MODEL_TIMEOUT_SECONDS=${MODEL_TIMEOUT_SECONDS:-300}
+      - KIOO_USE_LANGGRAPH=${KIOO_USE_LANGGRAPH:-0}
+      - KIOO_DB_PATH=/app/data/kioo.db
+      - SEARXNG_URL=http://searxng:8080
+      - MCP_GATEWAY_URL=http://mcp-gateway:8002
+      - KIOO_PROMPT_PATH=/app/prompts/kioo-system.txt
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - model-server
+      - searxng
+      - mcp-gateway
     restart: unless-stopped
 
   kioo:
@@ -34,11 +78,16 @@ services:
       - ./data:/app/data
     environment:
       - QVAC_CONFIG_PATH=/app/qvac.config.json
-      - QVAC_MODEL_PATH=/app/models/qwen3-0.6b-q4_0.gguf
+      - QVAC_MODEL_PATH=/app/models/Qwen3.5-4B-Q4_K_M.gguf
       - PORT=3000
       - HOST=0.0.0.0
       - SEARXNG_URL=http://searxng:8080
+      - MCP_GATEWAY_URL=http://mcp-gateway:8002
+      - KIOO_AGENT_URL=http://deep-agents:8001
+      - KIOO_AGENT_TIMEOUT_MS=${KIOO_AGENT_TIMEOUT_MS:-300000}
+      - MODEL_NAME=${MODEL_NAME:-qwen3.5-4b-local}
     depends_on:
+      - model-server
       - searxng
       - deep-agents
     restart: unless-stopped

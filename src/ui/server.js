@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { loadAgent, unloadAgent } from '../agent.js';
 import { getDb } from '../db/database.js';
 import { runTurn, resolveApproval } from '../runtime/agentRunner.js';
-import { createSession, getSession, listSessions, deleteSession } from '../runtime/session.js';
+import { createSession, getSession, listSessions, deleteSession, updateSessionTitle, appendMessage, setStatus } from '../runtime/session.js';
 import { addGoal, listGoals, updateGoal } from '../runtime/goals.js';
-import { listPendingApprovals } from '../runtime/approvals.js';
+import { listPendingApprovals, createApprovals, setApprovalStatus, markApprovalExecuted } from '../runtime/approvals.js';
 import { onStatusChange } from '../runtime/status.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,6 +15,13 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || 'localhost';
+const AGENT_URL = process.env.KIOO_AGENT_URL ? process.env.KIOO_AGENT_URL.replace(/\/$/, '') : null;
+const AGENT_TIMEOUT_MS = Number(process.env.KIOO_AGENT_TIMEOUT_MS || 300000);
+const MCP_GATEWAY_URL = process.env.MCP_GATEWAY_URL ? process.env.MCP_GATEWAY_URL.replace(/\/$/, '') : null;
+const MODEL_NAME = process.env.MODEL_NAME || path.basename(process.env.QVAC_MODEL_PATH || 'unknown');
+const ESCALATION_MODEL_NAME = process.env.KIOO_ESCALATION_MODEL_PATH
+    ? path.basename(process.env.KIOO_ESCALATION_MODEL_PATH)
+    : null;
 
 const contentTypes = {
     html: 'text/html; charset=utf-8',
@@ -39,6 +46,32 @@ function jsonResponse(statusCode, data) {
 function send(res, response) {
     res.writeHead(response.status, response.headers);
     res.end(response.body);
+}
+
+function normalizeApprovalDecision(value) {
+    if (value === 'approve' || value === 'approved') return 'approve';
+    if (value === 'reject' || value === 'rejected') return 'reject';
+    return null;
+}
+
+async function callMcp(pathname) {
+    if (!MCP_GATEWAY_URL) {
+        throw new Error('MCP Gateway is not configured');
+    }
+    const response = await fetch(`${MCP_GATEWAY_URL}${pathname}`, {
+        signal: AbortSignal.timeout(10000),
+    });
+    const text = await response.text();
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch {
+        data = text;
+    }
+    if (!response.ok) {
+        throw new Error((data && data.error) || `MCP Gateway returned ${response.status}`);
+    }
+    return data;
 }
 
 function serveFile(filename) {
@@ -73,9 +106,96 @@ function parseJson(body) {
     }
 }
 
+function buildRemoteHistory(sessionId) {
+    const rows = getDb().prepare(
+        'SELECT role, content, tool_name, tool_calls, tool_call_id FROM messages '
+        + 'WHERE session_id = ? ORDER BY created_at, rowid'
+    ).all(sessionId);
+
+    return rows.map(row => {
+        if (row.role === 'tool') {
+            return {
+                role: 'tool',
+                content: row.content,
+                tool_call_id: row.tool_call_id || '',
+                name: row.tool_name || 'unknown',
+            };
+        }
+
+        if (row.role === 'assistant' && row.tool_calls) {
+            let calls;
+            try {
+                calls = JSON.parse(row.tool_calls);
+            } catch {
+                calls = [];
+            }
+            if (calls.length) {
+                return {
+                    role: 'assistant',
+                    content: row.content,
+                    tool_calls: calls.map(call => ({
+                        id: call.id,
+                        type: 'function',
+                        function: {
+                            name: call.name,
+                            arguments: JSON.stringify(call.arguments || {}),
+                        },
+                    })),
+                };
+            }
+        }
+
+        return { role: row.role, content: row.content };
+    });
+}
+
+function remotePayload(data) {
+    const reply = data.reply || '';
+    return {
+        sessionId: data.session_id,
+        reply,
+        status: data.status || 'completed',
+        error: data.error || null,
+        approvals: data.approvals || [],
+        route: { provider: 'remote', model: data.model || null, steps: data.steps || 0 },
+        toolCalls: data.tool_calls || [],
+        toolResults: data.tool_results || [],
+        events: [
+            { type: 'final', content: reply },
+            ...(data.tool_calls || []).map(call => ({ type: 'toolCall', call: { name: call.name, arguments: call.arguments } })),
+            ...(data.tool_results || []).map(result => ({ type: 'toolResult', result })),
+        ],
+    };
+}
+
+async function callRemoteAgent(sessionId, message, approvedToolKeys = []) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
+    try {
+        const res = await fetch(`${AGENT_URL}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+                session_id: sessionId,
+                message,
+                history: buildRemoteHistory(sessionId),
+                approved_tool_keys: approvedToolKeys,
+            }),
+        });
+        if (!res.ok) {
+            throw new Error(`Remote agent returned ${res.status}`);
+        }
+        return await res.json();
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 async function startServer() {
     let modelId;
     let modelLoaded = false;
+    const remoteApprovals = new Map();
 
     if (process.env.KIOO_SKIP_MODEL === '1') {
         console.log('\u25b8 Skipping model load (KIOO_SKIP_MODEL=1)');
@@ -91,14 +211,57 @@ async function startServer() {
     }
 
     async function handleChat(res, sessionId, message) {
-        if (!modelLoaded || !modelId) {
-            return send(res, jsonResponse(503, { error: 'Model not loaded. Local model unavailable.' }));
-        }
         if (!message || typeof message !== 'string') {
             return send(res, jsonResponse(400, { error: 'Message is required' }));
         }
         if (!getSession(sessionId)) {
             return send(res, jsonResponse(404, { error: 'Session not found' }));
+        }
+
+        if (AGENT_URL) {
+            setStatus(sessionId, 'thinking');
+            try {
+                const data = await callRemoteAgent(sessionId, message);
+
+                if (data.status === 'waiting_approval' && data.approval) {
+                    const created = createApprovals(sessionId, [{
+                        name: data.approval.name,
+                        arguments: data.approval.arguments,
+                        id: data.approval.key,
+                    }], () => true);
+                    const approval = created[0];
+                    remoteApprovals.set(approval.id, {
+                        sessionId,
+                        message,
+                        key: data.approval.key,
+                    });
+                    setStatus(sessionId, 'waiting_approval');
+                    return send(res, jsonResponse(200, remotePayload({
+                        ...data,
+                        approvals: created,
+                        events: [...(data.events || []), {
+                            type: 'status',
+                            status: 'waiting_approval',
+                            tool: data.approval.name,
+                        }],
+                    })));
+                }
+
+                appendMessage(sessionId, 'user', message);
+                appendMessage(sessionId, 'assistant', data.reply || '');
+                setStatus(sessionId, 'idle');
+                return send(res, jsonResponse(200, remotePayload(data)));
+            } catch (err) {
+                setStatus(sessionId, 'idle');
+                if (!modelLoaded || !modelId) {
+                    return send(res, jsonResponse(503, { error: `Remote agent unavailable: ${err.message}` }));
+                }
+                console.error(`Remote agent failed, falling back to local: ${err.message}`);
+            }
+        }
+
+        if (!modelLoaded || !modelId) {
+            return send(res, jsonResponse(503, { error: 'Model not loaded. Local model unavailable.' }));
         }
 
         const result = await runTurn(sessionId, message, { modelId });
@@ -138,12 +301,26 @@ async function startServer() {
             return;
         }
 
+        if (method === 'GET' && parts[0] === 'mcp' && ['tools', 'audit', 'connectors'].includes(parts[1])) {
+            try {
+                const target = parts[1] === 'audit' ? `/audit${url.search}` : `/${parts[1]}`;
+                return send(res, jsonResponse(200, await callMcp(target)));
+            } catch (err) {
+                return send(res, jsonResponse(503, { error: err.message }));
+            }
+        }
+
         if (parts[0] === 'health') {
             return send(res, jsonResponse(200, {
                 status: 'ok',
-                offline: true,
+                offline: !AGENT_URL,
+                mode: AGENT_URL ? 'remote' : 'local',
+                agentUrl: AGENT_URL,
                 modelLoaded,
-                escalationEnabled: Boolean(process.env.KIOO_ESCALATION_MODEL_PATH),
+                model: MODEL_NAME,
+                escalationEnabled: Boolean(ESCALATION_MODEL_NAME),
+                escalationModel: ESCALATION_MODEL_NAME,
+                mcpGateway: Boolean(MCP_GATEWAY_URL),
             }));
         }
 
@@ -193,6 +370,18 @@ async function startServer() {
                     return send(res, jsonResponse(404, { error: 'Session not found' }));
                 }
                 return send(res, jsonResponse(200, { ok: true }));
+            }
+
+            if (parts.length === 2 && method === 'PATCH') {
+                const payload = parseJson(await readBody(req));
+                if (payload === null || typeof payload.title !== 'string' || !payload.title.trim()) {
+                    return send(res, jsonResponse(400, { error: 'title is required' }));
+                }
+                const updated = updateSessionTitle(sessionId, payload.title.trim());
+                if (!updated) {
+                    return send(res, jsonResponse(404, { error: 'Session not found' }));
+                }
+                return send(res, jsonResponse(200, { session: getSession(sessionId) }));
             }
 
             if (parts.length === 3 && parts[2] === 'chat' && method === 'POST') {
@@ -288,11 +477,40 @@ async function startServer() {
                 if (payload === null) {
                     return send(res, jsonResponse(400, { error: 'Invalid JSON body' }));
                 }
+                const decision = normalizeApprovalDecision(payload.decision);
+                if (!decision) {
+                    return send(res, jsonResponse(400, { error: 'Invalid approval decision' }));
+                }
+
+                const remote = remoteApprovals.get(approvalId);
+                if (remote) {
+                    try {
+                        setApprovalStatus(approvalId, decision === 'approve' ? 'approved' : 'rejected');
+                        remoteApprovals.delete(approvalId);
+
+                        if (decision === 'reject') {
+                            return send(res, jsonResponse(200, remotePayload({
+                                session_id: sessionId,
+                                reply: 'Approval denied. The action was not performed.',
+                                status: 'rejected',
+                            })));
+                        }
+
+                        const data = await callRemoteAgent(sessionId, remote.message, [remote.key]);
+                        appendMessage(sessionId, 'user', remote.message);
+                        appendMessage(sessionId, 'assistant', data.reply || '');
+                        markApprovalExecuted(approvalId, { reply: data.reply || '' });
+                        return send(res, jsonResponse(200, remotePayload(data)));
+                    } catch (err) {
+                        return send(res, jsonResponse(500, { error: err.message }));
+                    }
+                }
+
                 if (!modelLoaded || !modelId) {
                     return send(res, jsonResponse(503, { error: 'Model not loaded. Local model unavailable.' }));
                 }
                 try {
-                    const result = await resolveApproval(sessionId, approvalId, payload.decision, { modelId });
+                    const result = await resolveApproval(sessionId, approvalId, decision, { modelId });
                     return send(res, jsonResponse(200, chatPayload(result)));
                 } catch (err) {
                     const message = err.message;

@@ -9,3 +9,5 @@ models/
 *.ggml
 data/
 *.db
+__pycache__/
+*.pyc

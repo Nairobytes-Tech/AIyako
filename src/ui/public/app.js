@@ -22,8 +22,16 @@ const views = document.querySelectorAll('.chat-view, .goals-view, .library-view,
 const chatForm = document.getElementById('chatForm');
 const sessionSelect = document.getElementById('sessionSelect');
 const newChatBtn = document.getElementById('newChatBtn');
+const renameSessionBtn = document.getElementById('renameSessionBtn');
+const deleteSessionBtn = document.getElementById('deleteSessionBtn');
 const goalForm = document.getElementById('goalForm');
 const goalInput = document.getElementById('goalInput');
+const settingModel = document.getElementById('settingModel');
+const settingMode = document.getElementById('settingMode');
+const settingEscalation = document.getElementById('settingEscalation');
+const settingMcp = document.getElementById('settingMcp');
+const settingNetwork = document.getElementById('settingNetwork');
+const mcpContainer = document.getElementById('mcpContainer');
 
 initApp();
 
@@ -194,6 +202,9 @@ function renderHistory(messages) {
         if (message.role === 'user') {
             addMessage(message.content, 'user');
         } else if (message.role === 'assistant') {
+            for (const call of message.tool_calls || []) {
+                addToolCall(call.name, call.arguments, true);
+            }
             if (!message.content || message.content === '[tool_calls]') continue;
             addMessage(message.content, 'assistant');
         } else if (message.role === 'tool') {
@@ -216,6 +227,7 @@ function initNav() {
             document.getElementById(`${item.dataset.tab}View`).classList.add('active');
             if (item.dataset.tab === 'goals') fetchTasks();
             if (item.dataset.tab === 'library') fetchNotes();
+            if (item.dataset.tab === 'more') fetchMcp();
         });
     });
 }
@@ -226,6 +238,43 @@ function initSessionControls() {
         if (isProcessing) return;
         startNewChat();
     });
+    renameSessionBtn.addEventListener('click', renameCurrentSession);
+    deleteSessionBtn.addEventListener('click', deleteCurrentSession);
+}
+
+async function renameCurrentSession() {
+    if (!currentSessionId || isProcessing) return;
+    const option = sessionSelect.selectedOptions[0];
+    const suggested = option ? option.textContent : '';
+    const title = window.prompt('Chat title', suggested);
+    if (!title || !title.trim()) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/sessions/${currentSessionId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: title.trim() }),
+        });
+        if (!res.ok) throw new Error('Could not rename chat');
+        await refreshSessionList();
+    } catch (err) {
+        addMessage(`Rename failed: ${err.message}`, 'assistant', 'error');
+    }
+}
+
+async function deleteCurrentSession() {
+    if (!currentSessionId || isProcessing) return;
+    if (!window.confirm('Delete this chat? This cannot be undone.')) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/sessions/${currentSessionId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Could not delete chat');
+        localStorage.removeItem(SESSION_KEY);
+        currentSessionId = null;
+        await startNewChat();
+    } catch (err) {
+        addMessage(`Delete failed: ${err.message}`, 'assistant', 'error');
+    }
 }
 
 function initGoals() {
@@ -296,13 +345,26 @@ async function checkHealth() {
     try {
         const res = await fetch(`${API_BASE}/health`);
         const data = await res.json();
-        if (data.modelLoaded) {
+        if (!data || data.status !== 'ok') {
+            setAgentStatus('idle', 'Unavailable');
+        } else if (data.mode === 'remote') {
+            setAgentStatus('ready', 'Remote agent');
+        } else if (data.modelLoaded) {
             setAgentStatus('ready', 'Ready');
         } else {
             setAgentStatus('busy', 'Loading...');
         }
+
+        settingModel.textContent = data.model || 'Unknown';
+        settingMode.textContent = data.mode === 'remote' ? 'Remote agent' : 'Local QVAC';
+        settingEscalation.textContent = data.escalationModel || 'Off';
+        settingMcp.textContent = data.mcpGateway ? 'Connected' : 'Off';
+        settingNetwork.textContent = isOnline ? 'Online' : 'Offline';
     } catch (err) {
         setAgentStatus('idle', 'Offline');
+        settingModel.textContent = 'Unavailable';
+        settingMode.textContent = 'Unavailable';
+        settingNetwork.textContent = 'Offline';
     }
 }
 
@@ -364,6 +426,12 @@ async function handleSubmit() {
 
         for (const tr of data.toolResults) {
             addToolResult(tr);
+        }
+
+        for (const event of data.events || []) {
+            if (event.type === 'status' && event.tool) {
+                setAgentStatus('busy', `Calling ${event.tool}...`);
+            }
         }
 
         for (const approval of data.approvals || []) {
@@ -463,8 +531,8 @@ function addMessage(text, role, type = '') {
     scrollToBottom();
 }
 
-function addToolCall(name, args) {
-    setAgentStatus('busy', `Calling ${name}...`);
+function addToolCall(name, args, silent = false) {
+    if (!silent) setAgentStatus('busy', `Calling ${name}...`);
 
     const div = document.createElement('div');
     div.className = 'tool-call';
@@ -476,13 +544,43 @@ function addToolCall(name, args) {
     scrollToBottom();
 }
 
+function safeUrl(value) {
+    if (typeof value !== 'string') return null;
+    try {
+        const url = new URL(value);
+        return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+    } catch {
+        return null;
+    }
+}
+
+function renderSearchResultCards(data) {
+    const rows = (data.results || []).map(item => {
+        const href = safeUrl(item.url);
+        const title = escapeHtml(item.title || item.url || 'Result');
+        const snippet = escapeHtml(item.snippet || '');
+        const link = href
+            ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${title}</a>`
+            : title;
+        return `<div class="search-result">${link}${snippet ? `<div class="search-snippet">${snippet}</div>` : ''}</div>`;
+    });
+
+    if (!rows.length) {
+        return '<div class="search-results">No usable results returned.</div>';
+    }
+    return `<div class="search-results">${rows.join('')}</div>`;
+}
+
 function addToolResult(result) {
     const div = document.createElement('div');
     const isSuccess = result && result.success;
     const icon = isSuccess ? '✅' : '❌';
     const label = isSuccess ? 'Success' : (result?.error || 'Failed');
+    const isSearch = isSuccess && result.data && Array.isArray(result.data.results);
     const dataPreview = isSuccess && result.data
-        ? `<pre style="margin-top:4px;color:#86efac">${escapeHtml(JSON.stringify(result.data, null, 2))}</pre>`
+        ? (isSearch
+            ? renderSearchResultCards(result.data)
+            : `<pre style="margin-top:4px;color:#86efac">${escapeHtml(JSON.stringify(result.data, null, 2))}</pre>`)
         : '';
 
     div.className = `tool-result ${isSuccess ? '' : 'error'}`;
@@ -670,6 +768,46 @@ async function updateGoalField(goalId, fields) {
     }
 }
 
+async function fetchMcp() {
+    mcpContainer.innerHTML = '<div class="empty-state">Loading...</div>';
+    try {
+        const [toolsRes, auditRes] = await Promise.all([
+            fetch(`${API_BASE}/mcp/tools`),
+            fetch(`${API_BASE}/mcp/audit`),
+        ]);
+        const toolsData = await toolsRes.json();
+        const auditData = await auditRes.json();
+        const tools = toolsData.tools || [];
+        const events = auditData.events || [];
+
+        let html = '<div class="mcp-section-title">Available tools</div>';
+        if (!tools.length) {
+            html += '<div class="empty-state">No MCP tools registered</div>';
+        } else {
+            html += `<ul class="item-list">${tools.map(tool => {
+                const definition = tool.function || tool;
+                return `<li>${escapeHtml(definition.name || 'tool')}
+                    <div class="meta">${escapeHtml(definition.description || 'MCP tool')}</div>
+                </li>`;
+            }).join('')}</ul>`;
+        }
+
+        html += '<div class="mcp-section-title">Recent activity</div>';
+        if (!events.length) {
+            html += '<div class="empty-state">No connector activity yet</div>';
+        } else {
+            html += `<ul class="item-list">${events.slice(0, 12).map(event => `
+                <li>${escapeHtml(event.tool || event.connector || 'event')}
+                    <div class="meta">${escapeHtml(event.status || '')} • ${formatTimestamp(event.created_at)}</div>
+                </li>
+            `).join('')}</ul>`;
+        }
+        mcpContainer.innerHTML = html;
+    } catch (err) {
+        mcpContainer.innerHTML = `<div class="error-message">MCP Gateway unavailable: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
 async function fetchNotes() {
     if (!currentSessionId) {
         cachedNotes = [];
@@ -720,6 +858,7 @@ function renderLibrary() {
 
 window.addEventListener('online', () => {
     isOnline = true;
+    settingNetwork.textContent = 'Online';
 });
 
 window.addEventListener('beforeunload', () => {
@@ -728,6 +867,7 @@ window.addEventListener('beforeunload', () => {
 
 window.addEventListener('offline', () => {
     isOnline = false;
+    settingNetwork.textContent = 'Offline';
     setAgentStatus('idle', 'Offline');
 });
 

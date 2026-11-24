@@ -17,6 +17,10 @@ Kioo AI gives you a private, offline AI assistant that can answer questions, man
 - **Goals & artifacts** — Task-driven goals are extracted from tool results
 - **Approval gate** — Require explicit approval before sensitive tools run
 - **Hybrid routing** — Escalates complex and web-search turns to an optional larger local model
+- **Remote agent stack** — Optional OpenAI-compatible model server + Python Deep Agents service, with local fallback
+- **MCP Gateway** — Register connectors, expose their tools, enforce scopes, and audit every call
+- **Connector starters** — Email, Calendar, WhatsApp, and Meetings tool families behind one interface
+- **Sandbox + approvals** — Isolated command/file tools; high-risk actions require user confirmation
 - **Web UI** — Responsive browser interface for laptop browsers
 - **CLI mode** — Direct terminal access to the agent
 - **Type-safe tools** — Zod schema validation on all tool inputs
@@ -49,15 +53,24 @@ node --version  # v22.x.x
 npm install @qvac/sdk zod
 ```
 
-### 3. Download model weights
+### 3. Model weights
 
-Download the Qwen3-0.6B Q4_0 model (365 MB):
+The primary model is already installed at
+`models/Qwen3.5-4B-Q4_K_M.gguf` (2.74 GB). It loads through QVAC with tool
+calling enabled, and thinking tags are stripped before replies reach the UI.
+The smaller `models/qwen3-0.6b-q4_0.gguf` remains as the automatic fallback.
+
+To re-download the primary model:
 
 ```bash
 mkdir -p models
-# Model file: qwen3-0.6b-q4_0.gguf
-# SHA256: 33bcc57074ec7b6eada5a90651ee546ec0c2b271002c22baf9f1b2dd1e8f75cb
+curl -L --fail --retry 5 -C - -o models/Qwen3.5-4B-Q4_K_M.gguf \
+  https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf
 ```
+
+The 9B Q4 build is ~5.7 GB and needs more free RAM than this machine currently
+has, so 4B is the configured default. Set `MODEL_PATH`/`MODEL_NAME` to use 9B
+on a larger machine.
 
 ### 4. Create config
 
@@ -88,6 +101,23 @@ This starts SearXNG at `http://localhost:8080` with JSON output enabled via
 `SEARXNG_URL`. If SearXNG is not running, `web_search` returns an error but the
 rest of Kioo continues to work offline.
 
+### Optional: remote agent stack (phases 1–3)
+
+Start the OpenAI-compatible model server, the Python Deep Agents service, and the Node UI together:
+
+```bash
+MODEL_DIR=/path/to/gguf-models docker compose up -d
+```
+
+The model server defaults to the bundled Qwen3.5-4B GGUF when `MODEL_DIR` is
+mounted, with Qwen3-0.6B as fallback. To use `Qwen3.5-9B` instead, mount its
+GGUF and set `MODEL_PATH`, `MODEL_NAME`, and `FALLBACK_MODEL_PATH`.
+
+When `KIOO_AGENT_URL` is set, `src/ui/server.js` proxies chat to the Python
+service, which runs a 10-step tool loop with one retry and primary→fallback
+model switching. If that service is unavailable, the Node server falls back to
+the local QVAC loop. Leave `KIOO_AGENT_URL` unset for fully local/offline mode.
+
 ## Usage
 
 ### CLI Mode
@@ -115,11 +145,25 @@ added and edited inline, and the Library separates notes from artifacts.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `QVAC_CONFIG_PATH` | — | Path to QVAC config (`./qvac.config.json`) |
-| `QVAC_MODEL_PATH` | Qwen3-600M | Local GGUF for the primary model |
-| `KIOO_ESCALATION_MODEL_PATH` | unset | Optional larger local GGUF for complex turns |
+| `QVAC_MODEL_PATH` | `models/Qwen3.5-4B-Q4_K_M.gguf` | Local GGUF for the primary model |
+| `KIOO_ESCALATION_MODEL_PATH` | Llama-3.2-1B | Optional larger local GGUF for complex turns |
+| `MODEL_BASE_URL` | `http://localhost:8000/v1` | Model server endpoint used by Deep Agents |
+| `MODEL_NAME` | `qwen3.5-4b-local` | Model name served by the model server |
+| `MODEL_PATH` | `models/Qwen3.5-4B-Q4_K_M.gguf` | GGUF loaded by the model server |
+| `FALLBACK_MODEL_PATH` | `models/qwen3-0.6b-q4_0.gguf` | GGUF used when the primary fails |
+| `FALLBACK_MODEL` | `qwen3-0.6b-local` | Name served for the fallback model |
+| `KIOO_AGENT_URL` | unset | Python Deep Agents base URL; enables remote mode |
+| `KIOO_AGENT_TIMEOUT_MS` | `300000` | Timeout for proxied chat requests |
+| `MODEL_TIMEOUT_SECONDS` | `300` | Timeout for local model inference calls in Deep Agents |
+| `KIOO_MAX_STEPS` | `10` | Hard step limit in the Python tool loop |
+| `MCP_GATEWAY_URL` | unset | MCP Gateway base URL; tools are discovered from it |
+| `MCP_GATEWAY_SECRET` | `kioo-dev-secret` | Token obfuscation secret for connector credentials |
+| `KIOO_USE_LANGGRAPH` | `1` | Use LangGraph when installed; `0` forces the fallback loop |
+| `KIOO_SANDBOX_DOCKER` | unset | Set to `1` to run sandbox commands in Docker |
 | `SEARXNG_URL` | `http://localhost:8080` | Local SearXNG base URL for `web_search` |
 | `KIOO_APPROVAL_TOOLS` | unset | Comma-separated tools requiring approval |
 | `KIOO_SKIP_MODEL` | unset | Set to `1` to run the server without loading a model |
+| `KIOO_PROMPT_PATH` | bundled prompt | Optional override for the shared system prompt file |
 | `PORT` / `HOST` | `3000` / `localhost` | HTTP server binding |
 
 ### Runtime API
@@ -130,6 +174,7 @@ added and edited inline, and the Library separates notes from artifacts.
 | `POST` | `/sessions` | Create a session |
 | `GET` | `/sessions` | List sessions |
 | `GET` | `/sessions/:id` | Session with messages, goals, artifacts |
+| `PATCH` | `/sessions/:id` | Rename a session |
 | `DELETE` | `/sessions/:id` | Delete a session and its data |
 | `POST` | `/sessions/:id/chat` | Run a turn in a session |
 | `GET` | `/sessions/:id/events` | Server-sent status events for a session |
@@ -138,6 +183,7 @@ added and edited inline, and the Library separates notes from artifacts.
 | `GET` | `/sessions/:id/approvals` | List approvals for a session |
 | `POST` | `/sessions/:id/approvals/:approvalId` | Approve or reject a pending tool call |
 | `GET` | `/notes`, `/tasks` | List notes and tasks |
+| `GET` | `/mcp/tools`, `/mcp/audit`, `/mcp/connectors` | MCP Gateway views proxied through the UI server |
 | `POST` | `/chat` | Legacy single-turn endpoint (auto-creates a session) |
 
 ### Running tests
@@ -149,6 +195,11 @@ npm test
 ## Architecture
 
 - **QVAC SDK** — Local LLM inference engine (llama.cpp backend)
+- **Shared prompt** (`prompts/kioo-system.txt`) — One system prompt for the model server, local agent, and Deep Agents; live tool lists are appended at runtime
+- **Model server** (`services/model-server/`) — OpenAI-compatible `/v1/chat/completions` over QVAC, with optional fallback model
+- **Deep Agents** (`services/deep-agents/`) — LangGraph agent with checkpointer, fallback loop, 10-step cap, tool families
+- **MCP Gateway** (`services/mcp-gateway/`) — Connector registry, auth/scope checks, audit log, dynamic tools
+- **Sandbox** (`services/deep-agents/sandbox.py`) — Isolated command and file tools
 - **SQLite** (`node:sqlite`, built into Node 22) — Local persistence for notes, tasks, sessions, messages, goals, and artifacts
 - **Runtime Layer** — Owns session lifecycle, message history, status events, goals, approvals, and hybrid routing; `runTurn()` wraps the QVAC tool loop
 - **Agent Tools** — `save_note`, `search_notes`, `create_task`, `list_tasks`, `mark_task_done`, `web_search`
@@ -159,6 +210,8 @@ npm test
 
 | Path | Description |
 |------|-------------|
+| `prompts/kioo-system.txt` | Shared system prompt used by every runtime path |
+| `src/systemPrompt.js` | Loads the shared prompt and appends the live tool list |
 | `src/agent.js` | Agent orchestration with tool calling loop |
 | `src/tools/` | Tool implementations with Zod validation |
 | `src/tools/index.js` | Tool registry and dispatcher |
@@ -167,8 +220,12 @@ npm test
 | `src/ui/server.js` | HTTP server for web interface |
 | `src/ui/public/` | Static frontend assets (HTML, CSS, JS) |
 | `src/types/index.ts` | TypeScript type definitions |
-| `docker-compose.yml` / `searxng/` | Self-hosted SearXNG for `web_search` |
-| `tests/` | Test suite (94 tests) |
+| `services/model-server/` | OpenAI-compatible local model server |
+| `services/deep-agents/` | Python FastAPI agent service with tool registry, sandbox, streaming |
+| `services/mcp-gateway/` | MCP Gateway with connectors, auth hooks, and audit log |
+| `docs/MCP_CONNECTORS.md` | Connector interface, auth, and approval design |
+| `docker-compose.yml` / `searxng/` | Model server, Deep Agents, MCP Gateway, SearXNG, and UI containers |
+| `tests/` | Test suite (100 tests) |
 
 ## Available Tools
 
@@ -192,8 +249,8 @@ npm test
 ## Test Results
 
 ```
-# tests 94
-# pass 94
+# tests 100
+# pass 100
 # fail 0
 ```
 

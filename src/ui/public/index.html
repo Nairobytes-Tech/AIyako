@@ -14,6 +14,8 @@
             </div>
             <div class="header-controls">
                 <select id="sessionSelect" class="session-select" aria-label="Switch session"></select>
+                <button id="renameSessionBtn" class="session-action" type="button" title="Rename chat">Rename</button>
+                <button id="deleteSessionBtn" class="session-action danger" type="button" title="Delete chat">Delete</button>
                 <button id="newChatBtn" class="new-chat-btn" type="button" title="New chat" aria-label="New chat">+</button>
             </div>
             <div class="status-line">
@@ -67,18 +69,32 @@
                 <div class="items-container">
                     <div class="setting-group">
                         <div class="setting-item">
-                            <span class="setting-label">Offline Mode</span>
-                            <span class="setting-value">Enabled</span>
+                            <span class="setting-label">Model</span>
+                            <span class="setting-value" id="settingModel">Loading...</span>
                         </div>
                         <div class="setting-item">
-                            <span class="setting-label">Model</span>
-                            <span class="setting-value">Qwen3-600M</span>
+                            <span class="setting-label">Mode</span>
+                            <span class="setting-value" id="settingMode">Loading...</span>
+                        </div>
+                        <div class="setting-item">
+                            <span class="setting-label">Escalation</span>
+                            <span class="setting-value" id="settingEscalation">Off</span>
+                        </div>
+                        <div class="setting-item">
+                            <span class="setting-label">MCP Gateway</span>
+                            <span class="setting-value" id="settingMcp">Off</span>
                         </div>
                         <div class="setting-item">
                             <span class="setting-label">Network</span>
-                            <span class="setting-value">Disconnected</span>
+                            <span class="setting-value" id="settingNetwork">Online</span>
                         </div>
                     </div>
+                </div>
+                <div class="section-header">
+                    <h2>Connections</h2>
+                </div>
+                <div class="items-container" id="mcpContainer">
+                    <div class="empty-state">Loading...</div>
                 </div>
             </section>
         </main>
