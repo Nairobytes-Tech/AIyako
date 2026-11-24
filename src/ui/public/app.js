@@ -18,7 +18,7 @@ const micBtn = document.getElementById('micBtn');
 const tasksContainer = document.getElementById('tasksContainer');
 const notesContainer = document.getElementById('notesContainer');
 const navItems = document.querySelectorAll('.nav-item');
-const views = document.querySelectorAll('.chat-view, .goals-view, .library-view, .more-view');
+const views = document.querySelectorAll('.chat-view, .goals-view, .library-view, .profile-view, .more-view');
 const chatForm = document.getElementById('chatForm');
 const sessionSelect = document.getElementById('sessionSelect');
 const newChatBtn = document.getElementById('newChatBtn');
@@ -32,27 +32,114 @@ const settingEscalation = document.getElementById('settingEscalation');
 const settingMcp = document.getElementById('settingMcp');
 const settingNetwork = document.getElementById('settingNetwork');
 const mcpContainer = document.getElementById('mcpContainer');
+const authShell = document.getElementById('authShell');
+const appShell = document.getElementById('appShell');
+const authScreens = document.querySelectorAll('.auth-screen');
+const onboarding = document.getElementById('onboarding');
+const profilePreview = document.getElementById('profilePreview');
+const profileEditor = document.getElementById('profileEditor');
+const profileInput = document.getElementById('profileInput');
+const profileUpdated = document.getElementById('profileUpdated');
+let currentUser = null;
+let profileData = null;
+let authConfig = null;
+let pendingOnboarding = false;
 
 initApp();
+
+async function apiFetch(url, options = {}, retry = true) {
+    const request = { ...options, credentials: 'same-origin' };
+    const response = await window.fetch(url, request);
+    if (response.status === 401 && retry && !String(url).includes('/auth/')) {
+        const refreshed = await window.fetch(`${API_BASE}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'same-origin',
+        });
+        if (refreshed.ok) {
+            return apiFetch(url, options, false);
+        }
+        showAuth();
+    }
+    return response;
+}
 
 async function initApp() {
     statusText.textContent = 'Idle';
     statusDot.className = 'status-dot idle';
     sendBtn.disabled = true;
-    checkHealth();
+    initAuthForms();
 
+    try {
+        const configRes = await apiFetch('/auth/config');
+        authConfig = await configRes.json();
+        if (!authConfig.google) {
+            const googleBtn = document.getElementById('googleBtn');
+            googleBtn.disabled = true;
+            googleBtn.textContent = 'Google Sign-In not configured';
+        }
+        if (authConfig.enabled) {
+            const meRes = await apiFetch('/auth/me');
+            if (!meRes.ok) {
+                showAuth();
+                return;
+            }
+            currentUser = (await meRes.json()).user;
+        }
+        await showApp();
+    } catch {
+        showAuth();
+    }
+}
+
+async function showApp() {
+    authShell.classList.add('hidden');
+    appShell.classList.remove('hidden');
+    checkHealth();
     initNav();
     initInput();
     initSessionControls();
     initGoals();
     initLibraryTabs();
+    initProfile();
     await ensureSession(currentSessionId);
+    await fetchProfile();
+}
+
+function showAuth(screen = 'authWelcome') {
+    if (statusSource) {
+        statusSource.close();
+        statusSource = null;
+    }
+    appShell.classList.add('hidden');
+    onboarding.classList.add('hidden');
+    authShell.classList.remove('hidden');
+    showAuthScreen(screen);
+}
+
+function showAuthScreen(screen) {
+    authScreens.forEach(item => item.classList.toggle('active', item.id === screen));
+    clearAuthErrors();
+}
+
+function clearAuthErrors() {
+    document.querySelectorAll('.field-error').forEach(item => { item.textContent = ''; });
+}
+
+function setFieldError(id, message) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = message || '';
+}
+
+function setBusy(button, busy, busyText, idleText) {
+    if (!button) return;
+    button.disabled = busy;
+    button.textContent = busy ? busyText : idleText;
 }
 
 async function ensureSession(preferredId) {
     if (preferredId) {
         try {
-            const res = await fetch(`${API_BASE}/sessions/${preferredId}`);
+            const res = await apiFetch(`${API_BASE}/sessions/${preferredId}`);
             if (res.ok) {
                 await activateSession(await res.json());
                 return;
@@ -118,7 +205,7 @@ async function switchSession(sessionId) {
     }
 
     try {
-        const res = await fetch(`${API_BASE}/sessions/${sessionId}`);
+        const res = await apiFetch(`${API_BASE}/sessions/${sessionId}`);
         if (!res.ok) throw new Error('Session not found');
         await activateSession(await res.json());
     } catch (err) {
@@ -129,7 +216,7 @@ async function switchSession(sessionId) {
 
 async function refreshSessionList() {
     try {
-        const res = await fetch(`${API_BASE}/sessions`);
+        const res = await apiFetch(`${API_BASE}/sessions`);
         if (!res.ok) return;
         const data = await res.json();
         sessionSelect.innerHTML = '';
@@ -181,7 +268,7 @@ function subscribeToStatus() {
 }
 
 async function createNewSession() {
-    const res = await fetch(`${API_BASE}/sessions`, {
+    const res = await apiFetch(`${API_BASE}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -250,7 +337,7 @@ async function renameCurrentSession() {
     if (!title || !title.trim()) return;
 
     try {
-        const res = await fetch(`${API_BASE}/sessions/${currentSessionId}`, {
+        const res = await apiFetch(`${API_BASE}/sessions/${currentSessionId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ title: title.trim() }),
@@ -267,7 +354,7 @@ async function deleteCurrentSession() {
     if (!window.confirm('Delete this chat? This cannot be undone.')) return;
 
     try {
-        const res = await fetch(`${API_BASE}/sessions/${currentSessionId}`, { method: 'DELETE' });
+        const res = await apiFetch(`${API_BASE}/sessions/${currentSessionId}`, { method: 'DELETE' });
         if (!res.ok) throw new Error('Could not delete chat');
         localStorage.removeItem(SESSION_KEY);
         currentSessionId = null;
@@ -284,7 +371,7 @@ function initGoals() {
         if (!title || !currentSessionId) return;
 
         try {
-            const res = await fetch(`${API_BASE}/sessions/${currentSessionId}/goals`, {
+            const res = await apiFetch(`${API_BASE}/sessions/${currentSessionId}/goals`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title }),
@@ -343,7 +430,7 @@ function initInput() {
 
 async function checkHealth() {
     try {
-        const res = await fetch(`${API_BASE}/health`);
+        const res = await apiFetch(`${API_BASE}/health`);
         const data = await res.json();
         if (!data || data.status !== 'ok') {
             setAgentStatus('idle', 'Unavailable');
@@ -393,7 +480,7 @@ async function handleSubmit() {
             await createNewSession();
         }
 
-        let res = await fetch(`${API_BASE}/sessions/${currentSessionId}/chat`, {
+        let res = await apiFetch(`${API_BASE}/sessions/${currentSessionId}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: text }),
@@ -401,7 +488,7 @@ async function handleSubmit() {
 
         if (res.status === 404) {
             await createNewSession();
-            res = await fetch(`${API_BASE}/sessions/${currentSessionId}/chat`, {
+            res = await apiFetch(`${API_BASE}/sessions/${currentSessionId}/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: text }),
@@ -620,7 +707,7 @@ async function resolveApprovalPrompt(approvalId, decision, el) {
     setAgentStatus('busy', decision === 'approve' ? 'Approving...' : 'Rejecting...');
 
     try {
-        const res = await fetch(`${API_BASE}/sessions/${currentSessionId}/approvals/${approvalId}`, {
+        const res = await apiFetch(`${API_BASE}/sessions/${currentSessionId}/approvals/${approvalId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ decision }),
@@ -682,8 +769,8 @@ async function fetchTasks() {
 
     try {
         const [tasksRes, goalsRes] = await Promise.all([
-            fetch(`${API_BASE}/tasks`),
-            fetch(`${API_BASE}/sessions/${currentSessionId}/goals`),
+            apiFetch(`${API_BASE}/tasks`),
+            apiFetch(`${API_BASE}/sessions/${currentSessionId}/goals`),
         ]);
         const tasksData = await tasksRes.json();
         const goalsData = goalsRes.ok ? await goalsRes.json() : { goals: [] };
@@ -751,7 +838,7 @@ async function fetchTasks() {
 
 async function updateGoalField(goalId, fields) {
     try {
-        const res = await fetch(`${API_BASE}/goals/${goalId}`, {
+        const res = await apiFetch(`${API_BASE}/goals/${goalId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(fields),
@@ -772,8 +859,8 @@ async function fetchMcp() {
     mcpContainer.innerHTML = '<div class="empty-state">Loading...</div>';
     try {
         const [toolsRes, auditRes] = await Promise.all([
-            fetch(`${API_BASE}/mcp/tools`),
-            fetch(`${API_BASE}/mcp/audit`),
+            apiFetch(`${API_BASE}/mcp/tools`),
+            apiFetch(`${API_BASE}/mcp/audit`),
         ]);
         const toolsData = await toolsRes.json();
         const auditData = await auditRes.json();
@@ -818,8 +905,8 @@ async function fetchNotes() {
 
     try {
         const [notesRes, sessionRes] = await Promise.all([
-            fetch(`${API_BASE}/notes`),
-            fetch(`${API_BASE}/sessions/${currentSessionId}`),
+            apiFetch(`${API_BASE}/notes`),
+            apiFetch(`${API_BASE}/sessions/${currentSessionId}`),
         ]);
         const notesData = await notesRes.json();
         const sessionData = sessionRes.ok ? await sessionRes.json() : { artifacts: [] };
@@ -870,5 +957,240 @@ window.addEventListener('offline', () => {
     settingNetwork.textContent = 'Offline';
     setAgentStatus('idle', 'Offline');
 });
+
+function initAuthForms() {
+    document.querySelectorAll('[data-auth-screen]').forEach(button => {
+        button.addEventListener('click', () => showAuthScreen(button.dataset.authScreen));
+    });
+
+    document.querySelectorAll('.reveal-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const input = document.getElementById(button.dataset.target);
+            if (!input) return;
+            const showing = input.type === 'text';
+            input.type = showing ? 'password' : 'text';
+            button.textContent = showing ? 'SHOW' : 'HIDE';
+        });
+    });
+
+    const googleBtn = document.getElementById('googleBtn');
+    googleBtn.addEventListener('click', () => {
+        window.location.href = '/auth/google';
+    });
+
+    document.getElementById('registerForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        pendingOnboarding = true;
+        const data = await authRequest('/auth/register', {
+            name: document.getElementById('registerName').value.trim(),
+            email: document.getElementById('registerEmail').value.trim(),
+            password: document.getElementById('registerPassword').value,
+        }, document.getElementById('registerSubmit'), 'CREATING...', 'Create account', 'registerEmailError');
+        if (data) {
+            currentUser = data.user;
+            await showApp();
+        }
+    });
+
+    document.getElementById('signinForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        const data = await authRequest('/auth/login', {
+            email: document.getElementById('signinEmail').value.trim(),
+            password: document.getElementById('signinPassword').value,
+        }, document.getElementById('signinSubmit'), 'SIGNING IN...', 'Sign in', 'signinPasswordError');
+        if (data) {
+            currentUser = data.user;
+            await showApp();
+        }
+    });
+
+    document.getElementById('forgotForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        const data = await authRequest('/auth/forgot', {
+            email: document.getElementById('forgotEmail').value.trim(),
+        }, document.getElementById('forgotSubmit'), 'SENDING...', 'Send reset link', 'forgotEmailError');
+        if (!data) return;
+        const success = document.getElementById('forgotSuccess');
+        success.classList.remove('hidden');
+        success.innerHTML = data.token
+            ? `Development reset link:<br><a href="${escapeHtml(data.resetUrl)}">${escapeHtml(data.resetUrl)}</a>`
+            : escapeHtml(data.message);
+    });
+
+    document.getElementById('resetForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        const token = new URLSearchParams(window.location.search).get('reset');
+        const data = await authRequest('/auth/reset', {
+            token,
+            password: document.getElementById('resetPassword').value,
+            confirm: document.getElementById('resetConfirm').value,
+        }, document.getElementById('resetSubmit'), 'SAVING...', 'Save password', 'resetError');
+        if (data) {
+            window.history.replaceState({}, '', window.location.pathname);
+            showAuthScreen('authSignin');
+        }
+    });
+
+    const resetToken = new URLSearchParams(window.location.search).get('reset');
+    const authError = new URLSearchParams(window.location.search).get('authError');
+    if (resetToken) {
+        showAuthScreen('authReset');
+    } else if (authError) {
+        document.getElementById('authWelcomeError').textContent = `Google sign-in failed: ${authError}`;
+    }
+}
+
+async function authRequest(path, body, button, busyText, idleText, errorId) {
+    clearAuthErrors();
+    setBusy(button, true, busyText, idleText);
+    try {
+        const res = await apiFetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    } catch (err) {
+        setFieldError(errorId, err.message);
+        return null;
+    } finally {
+        setBusy(button, false, busyText, idleText);
+    }
+}
+
+function initProfile() {
+    document.getElementById('signOutBtn').addEventListener('click', signOut);
+    document.getElementById('deleteAccountBtn').addEventListener('click', deleteUserAccount);
+    document.getElementById('editProfileBtn').addEventListener('click', () => {
+        profileEditor.classList.remove('hidden');
+        profileInput.value = profileData ? profileData.user_md : '';
+        profileInput.focus();
+    });
+    document.getElementById('cancelProfileBtn').addEventListener('click', () => {
+        profileEditor.classList.add('hidden');
+    });
+    document.getElementById('saveProfileBtn').addEventListener('click', saveUserProfile);
+    document.getElementById('onboardingBtn').addEventListener('click', () => onboarding.classList.remove('hidden'));
+    document.getElementById('onboardingSkip').addEventListener('click', () => onboarding.classList.add('hidden'));
+    document.getElementById('onboardingSave').addEventListener('click', saveOnboarding);
+}
+
+async function fetchProfile() {
+    try {
+        const res = await apiFetch('/profile');
+        if (!res.ok) return;
+        profileData = await res.json();
+        profileInput.value = profileData.user_md || '';
+        profileUpdated.textContent = profileData.updated_at ? formatTimestamp(profileData.updated_at) : '';
+        renderMarkdown(profileData.user_md || '');
+        if (currentUser) {
+            document.getElementById('profileName').textContent = currentUser.name;
+            document.getElementById('profileEmail').textContent = currentUser.email;
+            document.getElementById('profileAvatar').textContent = currentUser.name
+                ? currentUser.name.trim().charAt(0).toUpperCase()
+                : 'K';
+        }
+        if (pendingOnboarding && profileData.user_md.includes('- Name:')) {
+            pendingOnboarding = false;
+            onboarding.classList.remove('hidden');
+        }
+    } catch {
+        profilePreview.innerHTML = '<div class="empty-state">Profile unavailable</div>';
+    }
+}
+
+function renderMarkdown(text) {
+    const html = text.split('\n').map(line => {
+        if (line.startsWith('### ')) return `<h3>${escapeHtml(line.slice(4))}</h3>`;
+        if (line.startsWith('## ')) return `<h2>${escapeHtml(line.slice(3))}</h2>`;
+        if (line.startsWith('# ')) return `<h1>${escapeHtml(line.slice(2))}</h1>`;
+        if (line.startsWith('- ')) return `<div class="md-line">&bull; ${escapeHtml(line.slice(2))}</div>`;
+        return `<div class="md-line">${line ? escapeHtml(line) : '&nbsp;'}</div>`;
+    }).join('');
+    profilePreview.innerHTML = html;
+}
+
+async function saveUserProfile() {
+    const button = document.getElementById('saveProfileBtn');
+    setBusy(button, true, 'SAVING...', 'Save');
+    try {
+        const res = await apiFetch('/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_md: profileInput.value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not save profile');
+        profileData = data;
+        profileInput.value = data.user_md;
+        profileUpdated.textContent = formatTimestamp(data.updated_at);
+        renderMarkdown(data.user_md);
+        profileEditor.classList.add('hidden');
+    } catch (err) {
+        addMessage(`Profile save failed: ${err.message}`, 'assistant', 'error');
+    } finally {
+        setBusy(button, false, 'SAVING...', 'Save');
+    }
+}
+
+async function saveOnboarding() {
+    const name = document.getElementById('onboardingName').value.trim();
+    const location = document.getElementById('onboardingLocation').value.trim();
+    const focus = document.getElementById('onboardingFocus').value;
+    const markdown = `# About you\n\n## Basics\n- Name: ${name || (currentUser && currentUser.name) || ''}\n- Location: ${location}\n\n## Focus\n- ${focus} is where I want the most help.\n\n## Preferences\n- Give practical next steps and keep answers direct.\n`;
+    const button = document.getElementById('onboardingSave');
+    setBusy(button, true, 'SAVING...', 'Save profile');
+    try {
+        const res = await apiFetch('/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_md: markdown }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not save profile');
+        profileData = data;
+        profileInput.value = data.user_md;
+        profileUpdated.textContent = formatTimestamp(data.updated_at);
+        renderMarkdown(data.user_md);
+        onboarding.classList.add('hidden');
+    } catch (err) {
+        addMessage(`Profile setup failed: ${err.message}`, 'assistant', 'error');
+    } finally {
+        setBusy(button, false, 'SAVING...', 'Save profile');
+    }
+}
+
+async function signOut() {
+    try {
+        await apiFetch('/auth/logout', { method: 'POST' });
+    } catch {
+        currentUser = null;
+    }
+    currentUser = null;
+    profileData = null;
+    currentSessionId = null;
+    localStorage.removeItem(SESSION_KEY);
+    showAuth();
+}
+
+async function deleteUserAccount() {
+    if (!window.confirm('Delete your account, sessions, and profile? This cannot be undone.')) return;
+    try {
+        const res = await apiFetch('/auth/account', { method: 'DELETE' });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Could not delete account');
+        }
+        currentUser = null;
+        profileData = null;
+        currentSessionId = null;
+        localStorage.removeItem(SESSION_KEY);
+        showAuth();
+    } catch (err) {
+        addMessage(`Account deletion failed: ${err.message}`, 'assistant', 'error');
+    }
+}
 
 window.quickPrompt = quickPrompt;

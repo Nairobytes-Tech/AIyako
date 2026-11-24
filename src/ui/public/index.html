@@ -3,14 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kioo AI</title>
+    <meta name="theme-color" content="#050705">
+    <title>KIOO // personal AI</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="app">
+    <div id="authShell" class="auth-shell hidden">
+        <main class="auth-card">
+            <div class="brand brand-auth">
+                <span class="brand-mark">&gt;_</span>
+                <span class="brand-name">KIOO</span>
+            </div>
+
+            <section id="authWelcome" class="auth-screen active">
+                <p class="eyebrow">LOCAL INTELLIGENCE // PRIVATE BY DEFAULT</p>
+                <h1>Your personal AI agent.</h1>
+                <p class="auth-subtitle">Kioo plans, remembers, and gets work done on your device.</p>
+                <button id="googleBtn" class="auth-btn primary" type="button">Continue with Google</button>
+                <button id="showSigninBtn" class="auth-btn secondary" type="button" data-auth-screen="authSignin">Continue with email</button>
+                <p class="auth-footnote">Phone sign-in is coming next.</p>
+                <p id="authWelcomeError" class="field-error"></p>
+            </section>
+
+            <section id="authSignin" class="auth-screen">
+                <button class="auth-back" type="button" data-auth-screen="authWelcome">&larr; Back</button>
+                <p class="eyebrow">ACCESS TERMINAL</p>
+                <h2>Welcome back.</h2>
+                <form id="signinForm" novalidate>
+                    <label class="field-label" for="signinEmail">Email</label>
+                    <input id="signinEmail" class="field-input" type="email" autocomplete="email" required>
+                    <p id="signinEmailError" class="field-error"></p>
+
+                    <label class="field-label" for="signinPassword">Password</label>
+                    <div class="password-field">
+                        <input id="signinPassword" class="field-input" type="password" autocomplete="current-password" required>
+                        <button class="reveal-btn" type="button" data-target="signinPassword">SHOW</button>
+                    </div>
+                    <p id="signinPasswordError" class="field-error"></p>
+
+                    <button id="signinSubmit" class="auth-btn primary" type="submit">Sign in</button>
+                </form>
+                <button class="auth-link" type="button" data-auth-screen="authForgot">Forgot password?</button>
+                <button class="auth-link" type="button" data-auth-screen="authRegister">Create account</button>
+            </section>
+
+            <section id="authRegister" class="auth-screen">
+                <button class="auth-back" type="button" data-auth-screen="authWelcome">&larr; Back</button>
+                <p class="eyebrow">NEW IDENTITY</p>
+                <h2>Create your account.</h2>
+                <form id="registerForm" novalidate>
+                    <label class="field-label" for="registerName">Name</label>
+                    <input id="registerName" class="field-input" type="text" autocomplete="name" required>
+                    <p id="registerNameError" class="field-error"></p>
+
+                    <label class="field-label" for="registerEmail">Email</label>
+                    <input id="registerEmail" class="field-input" type="email" autocomplete="email" required>
+                    <p id="registerEmailError" class="field-error"></p>
+
+                    <label class="field-label" for="registerPassword">Password</label>
+                    <div class="password-field">
+                        <input id="registerPassword" class="field-input" type="password" autocomplete="new-password" required>
+                        <button class="reveal-btn" type="button" data-target="registerPassword">SHOW</button>
+                    </div>
+                    <p id="registerPasswordError" class="field-error"></p>
+
+                    <button id="registerSubmit" class="auth-btn primary" type="submit">Create account</button>
+                </form>
+                <button class="auth-link" type="button" data-auth-screen="authSignin">Already have an account?</button>
+            </section>
+
+            <section id="authForgot" class="auth-screen">
+                <button class="auth-back" type="button" data-auth-screen="authSignin">&larr; Back</button>
+                <p class="eyebrow">RECOVERY</p>
+                <h2>Reset your password.</h2>
+                <form id="forgotForm" novalidate>
+                    <label class="field-label" for="forgotEmail">Email</label>
+                    <input id="forgotEmail" class="field-input" type="email" autocomplete="email" required>
+                    <p id="forgotEmailError" class="field-error"></p>
+                    <button id="forgotSubmit" class="auth-btn primary" type="submit">Send reset link</button>
+                </form>
+                <div id="forgotSuccess" class="auth-success hidden"></div>
+            </section>
+
+            <section id="authReset" class="auth-screen">
+                <p class="eyebrow">NEW CREDENTIALS</p>
+                <h2>Choose a new password.</h2>
+                <form id="resetForm" novalidate>
+                    <label class="field-label" for="resetPassword">New password</label>
+                    <div class="password-field">
+                        <input id="resetPassword" class="field-input" type="password" autocomplete="new-password" required>
+                        <button class="reveal-btn" type="button" data-target="resetPassword">SHOW</button>
+                    </div>
+                    <label class="field-label" for="resetConfirm">Confirm password</label>
+                    <input id="resetConfirm" class="field-input" type="password" autocomplete="new-password" required>
+                    <p id="resetError" class="field-error"></p>
+                    <button id="resetSubmit" class="auth-btn primary" type="submit">Save password</button>
+                </form>
+            </section>
+
+            <footer class="auth-footer">
+                <span>TERMS</span>
+                <span>PRIVACY</span>
+                <span>OFFLINE-FIRST</span>
+            </footer>
+        </main>
+    </div>
+
+    <div id="appShell" class="app hidden">
         <header class="header">
-            <div class="logo">
-                <span class="logo-text">Kioo</span>
+            <div class="brand">
+                <span class="brand-mark">&gt;_</span>
+                <span class="brand-name">KIOO</span>
             </div>
             <div class="header-controls">
                 <select id="sessionSelect" class="session-select" aria-label="Switch session"></select>
@@ -30,13 +133,9 @@
                 <form class="composer" id="chatForm">
                     <div class="input-wrapper">
                         <textarea id="input" placeholder="Message Kioo..." rows="1"></textarea>
-                        <button id="micBtn" class="icon-btn" type="button">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 1 3 3v8a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"></path><path d="M8 11a4 4 0 1 1 8 0"></path><path d="M12 19v4"></path></svg>
-                        </button>
+                        <button id="micBtn" class="icon-btn" type="button" aria-label="Voice input unavailable">||</button>
                     </div>
-                    <button id="sendBtn" class="send-btn" type="submit">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><path d="M22 2L11 13v-3C9 8 5 7 5 12c0 3 4 4 4 4v3l-9 5v-9l14-16z" fill="currentColor"></path></svg>
-                    </button>
+                    <button id="sendBtn" class="send-btn" type="submit" aria-label="Send message">&gt;</button>
                 </form>
             </section>
 
@@ -60,6 +159,45 @@
                     </div>
                 </div>
                 <div class="items-container" id="notesContainer"></div>
+            </section>
+
+            <section class="profile-view" id="profileView">
+                <div class="section-header">
+                    <h2>Profile</h2>
+                </div>
+                <div class="items-container profile-container">
+                    <div class="profile-card">
+                        <div class="profile-avatar" id="profileAvatar">K</div>
+                        <div class="profile-identity">
+                            <h3 id="profileName">Kioo user</h3>
+                            <p id="profileEmail">Signed in</p>
+                        </div>
+                    </div>
+                    <div class="profile-actions">
+                        <button id="onboardingBtn" class="terminal-btn" type="button">Finish setup</button>
+                        <button id="signOutBtn" class="terminal-btn" type="button">Sign out</button>
+                        <button id="deleteAccountBtn" class="terminal-btn danger" type="button">Delete account</button>
+                    </div>
+
+                    <div class="profile-section">
+                        <div class="profile-section-head">
+                            <h3>About you</h3>
+                            <span id="profileUpdated"></span>
+                        </div>
+                        <p class="profile-hint">Kioo uses this file to personalize how it helps you. You can edit anything.</p>
+                        <div id="profilePreview" class="markdown-view"></div>
+                        <button id="editProfileBtn" class="terminal-btn primary" type="button">Edit user.md</button>
+                    </div>
+
+                    <div id="profileEditor" class="profile-editor hidden">
+                        <label class="field-label" for="profileInput">user.md</label>
+                        <textarea id="profileInput" spellcheck="true"></textarea>
+                        <div class="editor-actions">
+                            <button id="saveProfileBtn" class="terminal-btn primary" type="button">Save</button>
+                            <button id="cancelProfileBtn" class="terminal-btn" type="button">Cancel</button>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <section class="more-view" id="moreView">
@@ -101,23 +239,50 @@
 
         <nav class="bottom-nav">
             <button class="nav-item active" data-tab="chat">
-                <span class="nav-icon">💬</span>
+                <span class="nav-icon">&gt;_</span>
                 <span class="nav-label">Chat</span>
             </button>
             <button class="nav-item" data-tab="goals">
-                <span class="nav-icon">🎯</span>
+                <span class="nav-icon">[]</span>
                 <span class="nav-label">Goals</span>
             </button>
             <button class="nav-item" data-tab="library">
-                <span class="nav-icon">📚</span>
+                <span class="nav-icon">==</span>
                 <span class="nav-label">Library</span>
             </button>
+            <button class="nav-item" data-tab="profile">
+                <span class="nav-icon">@</span>
+                <span class="nav-label">Profile</span>
+            </button>
             <button class="nav-item" data-tab="more">
-                <span class="nav-icon">⋯</span>
+                <span class="nav-icon">:</span>
                 <span class="nav-label">More</span>
             </button>
         </nav>
     </div>
+
+    <div id="onboarding" class="modal hidden">
+        <div class="modal-card">
+            <p class="eyebrow">FIRST RUN // PROFILE</p>
+            <h2>Tell Kioo who you are.</h2>
+            <p class="profile-hint">This writes directly to your user.md. Skip anytime.</p>
+            <label class="field-label" for="onboardingName">What should Kioo call you?</label>
+            <input id="onboardingName" class="field-input" type="text">
+            <label class="field-label" for="onboardingLocation">Where are you based?</label>
+            <input id="onboardingLocation" class="field-input" type="text">
+            <label class="field-label" for="onboardingFocus">What do you want help with most?</label>
+            <select id="onboardingFocus" class="field-input">
+                <option value="work">Work</option>
+                <option value="life">Life</option>
+                <option value="learning">Learning</option>
+            </select>
+            <div class="editor-actions">
+                <button id="onboardingSave" class="terminal-btn primary" type="button">Save profile</button>
+                <button id="onboardingSkip" class="terminal-btn" type="button">Skip</button>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js" type="module"></script>
 </body>
 </html>
