@@ -15,9 +15,13 @@ import {
 } from './approvals.js';
 import { chooseRoute } from './router.js';
 
-function buildHistory(messages) {
+function buildHistory(messages, userMd = null) {
+    const profileMessage = userMd && userMd.trim()
+        ? [{ role: 'system', content: `User profile (user.md). Use it to personalize help without exposing it unnecessarily:\n${userMd}` }]
+        : [];
     return [
         { role: 'system', content: SYSTEM_PROMPT },
+        ...profileMessage,
         ...messages
             .filter(m => m.role !== 'system')
             .map(message => {
@@ -133,7 +137,7 @@ async function driveCompletion(sessionId, options = {}, extraEvents = [], repeat
         : (options.modelId || await loadAgent({ ...options, modelPath: options.modelPath }));
 
     const gate = getApprovalGate(options);
-    const history = buildHistory(messages);
+    const history = buildHistory(messages, options.userMd);
     const initialLength = history.length;
 
     const result = await createCompletion(modelId, history, {

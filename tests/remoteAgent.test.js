@@ -67,6 +67,7 @@ describe('Remote agent proxy', () => {
                 PORT: String(SERVER_PORT),
                 HOST: '127.0.0.1',
                 KIOO_SKIP_MODEL: '1',
+                KIOO_AUTH_ENABLED: '0',
                 KIOO_AGENT_URL: `http://127.0.0.1:${AGENT_PORT}`,
             },
             stdio: ['ignore', 'pipe', 'pipe'],

@@ -38,11 +38,12 @@ npm test
 - **Config**: `QVAC_CONFIG_PATH=./qvac.config.json` must be set
 - **DB**: SQLite via `node:sqlite`, stored in `data/kioo.db`
 - **Search**: self-hosted SearXNG at `SEARXNG_URL` (default `http://localhost:8080`)
+- **Auth**: enabled by default; `KIOO_AUTH_ENABLED=0` disables the gate for local tests
 
 ## Testing Policy
 
 - Tests use Node 22's built-in `node:test` (no external test framework needed)
-- Run: `npm test` (100 tests, must all pass before committing; requires Node 22)
+- Run: `npm test` (109 tests, must all pass before committing; requires Node 22)
 - Do NOT commit `data/kioo.db` (gitignored)
 - Do NOT commit model weights (gitignored)
 
@@ -58,8 +59,9 @@ npm test
 - `prompts/kioo-system.txt` — Shared system prompt for Node, model server, and Deep Agents
 - `src/systemPrompt.js` — Loads the shared prompt and appends the live tool list
 - `src/agent.js` — Agent loop with tool calling via QVAC SDK
+- `src/auth/` — Email/Google sessions, password hashing, refresh tokens, account `user.md`, deletion
 - `src/tools/` — 6 local tools with Zod validation; Python registry adds research/work/system/execution families and MCP tools
-- `src/runtime/` — session manager, status events, goals, approvals, hybrid router, and `runTurn()` wrapping the agent loop
+- `src/runtime/` — session manager, status events, goals, approvals, hybrid router, and `runTurn()` wrapping the agent loop; injects account `user.md` into model context
 - `services/model-server/` — OpenAI-compatible endpoint over QVAC with optional fallback model
 - `services/deep-agents/` — Python FastAPI agent: LangGraph/checkpointer with fallback loop, tool registry, sandbox, approvals, streaming
 - `services/mcp-gateway/` — Connector registry, auth/scope checks, audit log, dynamic tool discovery

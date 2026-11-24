@@ -73,9 +73,11 @@ export function getSession(sessionId) {
     };
 }
 
-export function listSessions() {
+export function listSessions(userId = null) {
     const db = getDb();
-    const rows = db.prepare('SELECT * FROM sessions ORDER BY updated_at DESC').all();
+    const rows = userId
+        ? db.prepare('SELECT * FROM sessions WHERE user_id = ? ORDER BY updated_at DESC').all(userId)
+        : db.prepare('SELECT * FROM sessions ORDER BY updated_at DESC').all();
     return rows.map(mapSession);
 }
 

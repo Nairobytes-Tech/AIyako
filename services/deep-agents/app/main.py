@@ -30,6 +30,8 @@ class ChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict[str, Any]]] = None
     approved_tool_keys: Optional[List[str]] = None
+    user_id: Optional[str] = None
+    user_md: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -67,6 +69,12 @@ def _prepare_history(req: ChatRequest):
     history = list(req.history or [])
     if not any(message.get("role") == "system" for message in history):
         history.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
+    if req.user_md and req.user_md.strip():
+        history.insert(1, {
+            "role": "system",
+            "content": "User profile (user.md). Use it to personalize help without exposing it unnecessarily:\n"
+            + req.user_md,
+        })
     return history + [{"role": "user", "content": req.message}]
 
 

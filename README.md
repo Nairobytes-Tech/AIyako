@@ -164,6 +164,14 @@ added and edited inline, and the Library separates notes from artifacts.
 | `KIOO_APPROVAL_TOOLS` | unset | Comma-separated tools requiring approval |
 | `KIOO_SKIP_MODEL` | unset | Set to `1` to run the server without loading a model |
 | `KIOO_PROMPT_PATH` | bundled prompt | Optional override for the shared system prompt file |
+| `KIOO_AUTH_ENABLED` | `1` | Gate the UI and agent APIs behind sign-in |
+| `KIOO_ACCESS_TTL_MS` | `900000` | Access token lifetime |
+| `KIOO_REFRESH_TTL_MS` | `2592000000` | Refresh token lifetime |
+| `KIOO_RESET_TTL_MS` | `3600000` | Password reset token lifetime |
+| `KIOO_DEV_RESET_TOKENS` | `0` | Return reset links for local development |
+| `KIOO_COOKIE_SECURE` | `0` | Add `Secure` to auth cookies when serving HTTPS |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | unset | Enable Google Sign-In when both are set |
+| `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/google/callback` | OAuth callback URL |
 | `PORT` / `HOST` | `3000` / `localhost` | HTTP server binding |
 
 ### Runtime API
@@ -171,6 +179,15 @@ added and edited inline, and the Library separates notes from artifacts.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Server + model status |
+| `GET` | `/auth/config` | Auth providers and gate status |
+| `POST` | `/auth/register` | Create an account and session |
+| `POST` | `/auth/login` | Sign in with email/password |
+| `POST` | `/auth/refresh` | Rotate access and refresh tokens |
+| `POST` | `/auth/logout` | Revoke the current session |
+| `POST` | `/auth/forgot`, `/auth/reset` | Password recovery |
+| `GET` | `/auth/google`, `/auth/google/callback` | Google Sign-In flow |
+| `GET` / `PUT` | `/profile` | View or update account `user.md` |
+| `DELETE` | `/auth/account` | Delete account and user data |
 | `POST` | `/sessions` | Create a session |
 | `GET` | `/sessions` | List sessions |
 | `GET` | `/sessions/:id` | Session with messages, goals, artifacts |
@@ -199,6 +216,7 @@ npm test
 - **Model server** (`services/model-server/`) — OpenAI-compatible `/v1/chat/completions` over QVAC, with optional fallback model
 - **Deep Agents** (`services/deep-agents/`) — LangGraph agent with checkpointer, fallback loop, 10-step cap, tool families
 - **MCP Gateway** (`services/mcp-gateway/`) — Connector registry, auth/scope checks, audit log, dynamic tools
+- **Auth + Profile** (`src/auth/`) — Email/password and Google sessions, refresh tokens, account `user.md`
 - **Sandbox** (`services/deep-agents/sandbox.py`) — Isolated command and file tools
 - **SQLite** (`node:sqlite`, built into Node 22) — Local persistence for notes, tasks, sessions, messages, goals, and artifacts
 - **Runtime Layer** — Owns session lifecycle, message history, status events, goals, approvals, and hybrid routing; `runTurn()` wraps the QVAC tool loop
@@ -217,15 +235,17 @@ npm test
 | `src/tools/index.js` | Tool registry and dispatcher |
 | `src/runtime/` | Session manager, status events, goals, approvals, router, and multi-turn runner |
 | `src/db/database.js` | SQLite database layer (singleton pattern) |
-| `src/ui/server.js` | HTTP server for web interface |
+| `src/auth/` | Auth sessions, password hashing, profile storage, account deletion |
+| `src/ui/server.js` | HTTP server for web interface and auth/profile APIs |
 | `src/ui/public/` | Static frontend assets (HTML, CSS, JS) |
 | `src/types/index.ts` | TypeScript type definitions |
 | `services/model-server/` | OpenAI-compatible local model server |
 | `services/deep-agents/` | Python FastAPI agent service with tool registry, sandbox, streaming |
 | `services/mcp-gateway/` | MCP Gateway with connectors, auth hooks, and audit log |
+| `docs/AUTH.md` | Auth, session, and `user.md` product rules |
 | `docs/MCP_CONNECTORS.md` | Connector interface, auth, and approval design |
 | `docker-compose.yml` / `searxng/` | Model server, Deep Agents, MCP Gateway, SearXNG, and UI containers |
-| `tests/` | Test suite (100 tests) |
+| `tests/` | Test suite (109 tests) |
 
 ## Available Tools
 

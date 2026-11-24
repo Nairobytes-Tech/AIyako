@@ -37,6 +37,7 @@ describe('HTTP server', () => {
                 PORT: String(PORT),
                 HOST: '127.0.0.1',
                 KIOO_SKIP_MODEL: '1',
+                KIOO_AUTH_ENABLED: '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });

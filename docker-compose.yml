@@ -86,6 +86,11 @@ services:
       - KIOO_AGENT_URL=http://deep-agents:8001
       - KIOO_AGENT_TIMEOUT_MS=${KIOO_AGENT_TIMEOUT_MS:-300000}
       - MODEL_NAME=${MODEL_NAME:-qwen3.5-4b-local}
+      - KIOO_AUTH_ENABLED=${KIOO_AUTH_ENABLED:-1}
+      - KIOO_DEV_RESET_TOKENS=${KIOO_DEV_RESET_TOKENS:-1}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:3000/auth/google/callback}
     depends_on:
       - model-server
       - searxng
