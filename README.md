@@ -1,10 +1,10 @@
-# Kioo AI — AI Yako
+# AIyako
 
 A local AI assistant that runs entirely offline on your device. Built with the [QVAC SDK](https://docs.qvac.tether.io) for local LLM inference.
 
 ## Mission
 
-Kioo AI gives you a private, offline AI assistant that can answer questions, manage notes and tasks, and work without an internet connection. No cloud, no tracking — your data stays on your device.
+AIyako gives you a private, offline AI assistant that can answer questions, manage notes and tasks, and work without an internet connection. No cloud, no tracking — your data stays on your device.
 
 ## Features
 
@@ -99,7 +99,7 @@ docker compose up -d searxng
 This starts SearXNG at `http://localhost:8080` with JSON output enabled via
 `searxng/settings.yml`. Point the agent at a different instance with
 `SEARXNG_URL`. If SearXNG is not running, `web_search` returns an error but the
-rest of Kioo continues to work offline.
+rest of AIyako continues to work offline.
 
 ### Optional: remote agent stack (phases 1–3)
 

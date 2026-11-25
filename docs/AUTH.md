@@ -1,4 +1,4 @@
-# Kioo Auth + Profile
+# AIyako Auth + Profile
 
 ## Product rules
 

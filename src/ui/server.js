@@ -7,8 +7,8 @@ import { loadAgent, unloadAgent } from '../agent.js';
 import { getDb } from '../db/database.js';
 import { runTurn, resolveApproval } from '../runtime/agentRunner.js';
 import { createSession, getSession, listSessions, deleteSession, updateSessionTitle, appendMessage, setStatus } from '../runtime/session.js';
-import { addGoal, listGoals, updateGoal } from '../runtime/goals.js';
-import { listPendingApprovals, createApprovals, setApprovalStatus, markApprovalExecuted } from '../runtime/approvals.js';
+import { addGoal, getGoal, listGoals, updateGoal } from '../runtime/goals.js';
+import { listPendingApprovals, createApprovals, setApprovalStatus, markApprovalExecuted, updateApprovalArgs } from '../runtime/approvals.js';
 import { onStatusChange } from '../runtime/status.js';
 import {
     USER_MD_TEMPLATE,
@@ -182,11 +182,12 @@ function redirectResponse(location, cookies = []) {
     };
 }
 
-async function callMcp(pathname) {
+async function callMcp(pathname, options = {}) {
     if (!MCP_GATEWAY_URL) {
         throw new Error('MCP Gateway is not configured');
     }
     const response = await fetch(`${MCP_GATEWAY_URL}${pathname}`, {
+        ...options,
         signal: AbortSignal.timeout(10000),
     });
     const text = await response.text();
@@ -298,7 +299,7 @@ function remotePayload(data) {
 
 async function callRemoteAgent(sessionId, message, approvedToolKeys = [], userContext = {}) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(new Error('The agent took too long to respond. Please retry.')), AGENT_TIMEOUT_MS);
     try {
         const res = await fetch(`${AGENT_URL}/chat`, {
             method: 'POST',
@@ -475,7 +476,7 @@ async function handleAuthRoutes(req, res, parts, url) {
 
             let user = getUserByGoogleId(info.sub) || getUserByEmail(info.email);
             if (!user) {
-                user = createUser({ name: info.name || 'Kioo user', email: info.email, googleId: info.sub });
+                user = createUser({ name: info.name || 'AIyako user', email: info.email, googleId: info.sub });
             } else if (!user.has_google) {
                 setGoogleId(user.id, info.sub);
                 user = getUserById(user.id);
@@ -644,6 +645,34 @@ async function startServer() {
             try {
                 const target = parts[1] === 'audit' ? `/audit${url.search}` : `/${parts[1]}`;
                 return send(res, jsonResponse(200, await callMcp(target)));
+            } catch (err) {
+                return send(res, jsonResponse(503, { error: err.message }));
+            }
+        }
+
+        if (method === 'POST' && parts[0] === 'mcp' && parts[1] === 'connectors') {
+            const payload = parseJson(await readBody(req));
+            if (payload === null) {
+                return send(res, jsonResponse(400, { error: 'Invalid JSON body' }));
+            }
+            try {
+                if (parts.length === 2) {
+                    if (!payload.name || !payload.url) {
+                        return send(res, jsonResponse(400, { error: 'Connector name and URL are required' }));
+                    }
+                    return send(res, jsonResponse(201, await callMcp('/connectors', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    })));
+                }
+                if (parts.length === 4 && parts[3] === 'refresh') {
+                    return send(res, jsonResponse(200, await callMcp(`/connectors/${encodeURIComponent(parts[2])}/refresh`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    })));
+                }
             } catch (err) {
                 return send(res, jsonResponse(503, { error: err.message }));
             }
@@ -838,9 +867,15 @@ async function startServer() {
                 if (!decision) {
                     return send(res, jsonResponse(400, { error: 'Invalid approval decision' }));
                 }
+                if (payload.args !== undefined && (!payload.args || typeof payload.args !== 'object' || Array.isArray(payload.args))) {
+                    return send(res, jsonResponse(400, { error: 'Approval arguments must be an object' }));
+                }
 
                 const remote = remoteApprovals.get(approvalId);
                 if (remote) {
+                    if (payload.args !== undefined) {
+                        return send(res, jsonResponse(400, { error: 'Editing connector approvals is not supported' }));
+                    }
                     try {
                         setApprovalStatus(approvalId, decision === 'approve' ? 'approved' : 'rejected');
                         remoteApprovals.delete(approvalId);
@@ -867,6 +902,7 @@ async function startServer() {
                     return send(res, jsonResponse(503, { error: 'Model not loaded. Local model unavailable.' }));
                 }
                 try {
+                    if (payload.args !== undefined) updateApprovalArgs(approvalId, payload.args);
                     const result = await resolveApproval(sessionId, approvalId, decision, {
                         modelId,
                         userMd: userContext.userMd,
@@ -883,16 +919,16 @@ async function startServer() {
         }
 
         if (parts[0] === 'goals' && parts.length === 2 && (method === 'PATCH' || method === 'PUT')) {
+            const goal = getGoal(parts[1]);
+            if (!goal || !requireOwnedSession(goal.session_id, auth)) {
+                return send(res, jsonResponse(404, { error: 'Goal not found' }));
+            }
             const payload = parseJson(await readBody(req));
             if (payload === null) {
                 return send(res, jsonResponse(400, { error: 'Invalid JSON body' }));
             }
             try {
-                const goal = updateGoal(parts[1], payload);
-                if (!goal) {
-                    return send(res, jsonResponse(404, { error: 'Goal not found' }));
-                }
-                return send(res, jsonResponse(200, goal));
+                return send(res, jsonResponse(200, updateGoal(parts[1], payload)));
             } catch (err) {
                 return send(res, jsonResponse(400, { error: err.message }));
             }
@@ -925,7 +961,7 @@ async function startServer() {
     const server = http.createServer(handleRequest);
 
     server.listen(PORT, HOST, () => {
-        console.log(`\u25b8 Kioo AI Server running on http://${HOST}:${PORT}`);
+        console.log(`\u25b8 AIyako server running on http://${HOST}:${PORT}`);
         console.log('\u25b8 Offline mode: local model only');
     });
 

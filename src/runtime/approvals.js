@@ -103,6 +103,17 @@ export function setApprovalStatus(approvalId, status) {
     return result.changes > 0;
 }
 
+export function updateApprovalArgs(approvalId, args) {
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+        throw new Error('Approval arguments must be an object');
+    }
+    const db = getDb();
+    const result = db.prepare(
+        'UPDATE approvals SET tool_args = ? WHERE id = ? AND status = ?'
+    ).run(JSON.stringify(args), approvalId, 'pending');
+    return result.changes > 0;
+}
+
 export function markApprovalExecuted(approvalId, result = null) {
     const db = getDb();
     const stored = result === null || result === undefined ? null : JSON.stringify(result);

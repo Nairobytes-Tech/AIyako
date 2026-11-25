@@ -306,7 +306,7 @@ export function startServer() {
         });
     });
     server.listen(config.port, '0.0.0.0', () => {
-        console.log(`Kioo model server listening on http://0.0.0.0:${config.port}/v1`);
+        console.log(`AIyako model server listening on http://0.0.0.0:${config.port}/v1`);
     });
     return server;
 }

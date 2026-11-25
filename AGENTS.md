@@ -1,8 +1,8 @@
-# AGENTS.md — Kioo AI (AI Yako)
+# AGENTS.md — AIyako
 
 ## Project Overview
 
-Kioo AI is a local, offline AI assistant built on the QVAC SDK. It runs entirely on-device with no cloud dependencies for inference.
+AIyako is a local, offline AI assistant built on the QVAC SDK. It runs entirely on-device with no cloud dependencies for inference.
 
 ## Quick Start
 

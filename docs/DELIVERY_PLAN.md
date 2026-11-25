@@ -1,4 +1,4 @@
-# Kioo AI — Delivery Plan (Target Architecture)
+# AIyako — Delivery Plan (Target Architecture)
 
 ## Goal
 Migrate agent brain from on-device Node/QVAC to Python + Deep Agents (LangGraph) served by a model server, keep the Node chat-first UI, add fallbacks, package as APK.

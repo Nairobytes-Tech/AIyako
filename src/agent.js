@@ -12,7 +12,7 @@ const MODEL_PATH = path.resolve(process.env.QVAC_MODEL_PATH || DEFAULT_MODEL_PAT
 if (MODEL_PATH.startsWith('http') || MODEL_PATH.startsWith('https')) {
     throw new Error(
         'Security: QVAC_MODEL_PATH must be a local file path. ' +
-        'Cloud/remote model URLs are not allowed in Kioo AI.'
+        'Cloud/remote model URLs are not allowed in AIyako.'
     );
 }
 
@@ -245,7 +245,7 @@ export function streamEvents(events) {
 if (import.meta.url === `file://${process.argv[1]}`) {
     const userInput = process.argv.slice(2).join(' ') || 'Save a note that my transport budget is KES 4,000. Then find my transport budget and create a task to review it tomorrow.';
 
-    console.log('\u25b8 Kioo AI Agent');
+    console.log('\u25b8 AIyako agent');
     console.log(`\u25b8 Input: ${userInput}\n`);
 
     runAgent(userInput)

@@ -14,7 +14,7 @@ export const USER_MD_TEMPLATE = `# About you
 - Learning:
 
 ## Preferences
-- How Kioo should help:
+- How AIyako should help:
 - Tone:
 - Things to avoid:
 `;
@@ -87,7 +87,7 @@ export function createUser({ name, email, phone = null, password = null, googleI
         id: randomUUID(),
         email: normalizeEmail(email),
         phone: phone ? String(phone).trim() : null,
-        name: String(name || '').trim() || 'Kioo user',
+        name: String(name || '').trim() || 'AIyako user',
         password_hash: password ? hashPassword(password) : null,
         google_id: googleId ? String(googleId) : null,
         created_at: now(),
